@@ -6,7 +6,9 @@
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1",
 		"start": "node src/app.js",
-		"dev": "nodemon src/app.js"
+		"dev": "nodemon src/app.js",
+		"setup:mongo": "node src/setup/mongo.js",
+		"seed:mongo": "node src/seed/mongo.js"
 	},
 	"keywords": [],
 	"author": "",
@@ -21,6 +23,7 @@
 		"redis": "^6.3.0"
 	},
 	"devDependencies": {
+		"@faker-js/faker": "^10.6.0",
 		"nodemon": "^3.1.14"
 	}
 }
