@@ -29,10 +29,10 @@ Los volúmenes son los que generará el script de carga; el historial es la enti
 | PlataformaOrigen, Genero | Embebidos en la ficha y como filtros | Carga inicial | 10 plataformas, 20 géneros | L alta, E muy baja | Fuerte | **MongoDB** |
 | Actor + Actuacion | Elenco de un contenido; contenidos de un actor | P1 | 2.000 actores, 6.000 actuaciones | L alta, E baja | Fuerte | **Neo4j** |
 | Vínculos entre contenidos (secuela, precuela, mismo universo, similar) | Recorridos de 1 a 3 saltos | P1 | 1.500 relaciones | L alta, E baja | Fuerte | **Neo4j** |
-| Señal de consumo (`VIO`) | Recomendaciones del perfil (P5) | Al terminar un episodio o película (P4) | ~20.000 aristas | L media, E media | Eventual | **Neo4j** |
+| Señal de consumo (`VIO`) | Recomendaciones del perfil (P5); las veces y la última vista se calculan con `count()` y `max()` | Una relación por visualización terminada, identificada por `idVisualizacion` (P4) | ~20.000 aristas | L media, E media | Eventual | **Neo4j** |
 | Sesión activa + cupo por cuenta | Contar sesiones de una cuenta | Abrir (P2), expirar y cerrar (P6) | Cientos simultáneas | L y E muy altas | Fuerte y atómica | **Redis** |
 | Continuar viendo | Un puntero por perfil y contenido | Cada pocos segundos (P3), avance de episodio (P4) | 10.000 punteros | E muy alta | Último valor gana | **Redis** (con AOF) |
-| Historial de visualizaciones | Por perfil y período; por contenido (P8) | Solo inserción (P3, P4) | 50.000 o más | E muy alta, L media | Eventual | **Cassandra** |
+| Historial de visualizaciones | Por perfil y período; por contenido (P8) | Una fila por visualización: se crea en P2 y se actualiza por su clave exacta (upsert) en P3 y P4 | 50.000 o más | E muy alta, L media | Eventual | **Cassandra** |
 | Licencia de contenido | Vigentes por contenido y región; vencidas a una fecha | Alta y renovación, pocas veces | 1.000 | L y E bajas | Fuerte, sin superposición | **PostgreSQL** |
 | Log de sagas | Por `idSaga`; pendientes al reiniciar | Un cambio por paso | Uno por operación | E media | Fuerte (documento atómico) | **MongoDB** |
 
@@ -88,11 +88,12 @@ Cada fila es un identificador compartido y muestra cómo aparece en cada motor. 
 | ID | MongoDB | Neo4j | Redis | Cassandra | PostgreSQL |
 | --- | --- | --- | --- | --- | --- |
 | `idContenido` | `contenidos._id` | `(:Contenido {id})` | En el valor de `cv:{idPerfil}:{idContenido}` y en el set `viendo:{idContenido}` | Columna de `historial_por_perfil`; clave de partición de `historial_por_contenido` | `licencia.id_contenido` |
-| `idEpisodio` | `contenidos.temporadas[].episodios[].id` | | En el valor de `cv:{idPerfil}:{idContenido}` | Columna de clustering en ambas tablas de historial | |
+| `idEpisodio` | `contenidos.temporadas[].episodios[].id` | | En el valor de `cv:{idPerfil}:{idContenido}` (en películas, el `idContenido`) | Columna común de ambas tablas de historial (nula en películas) | |
 | `idPerfil` | `cuentas.perfiles[].id` | `(:Perfil {id})` | Parte de la clave `cv:{idPerfil}:…`; campo de `sesion:{idSesion}` | Clave de partición de `historial_por_perfil` | |
 | `idCuenta` | `cuentas._id` | | Clave de `cupo:{idCuenta}` (ZSET de sesiones activas) | | |
 | `idSesion` | | | `sesion:{idSesion}` (HASH con TTL) | Columna de ambas tablas de historial | |
-| `idDispositivo` | `dispositivos._id` | | Campo de `sesion:{idSesion}` | Columna de `historial_por_perfil` | |
+| `idVisualizacion` | En `sagas.datos` (para compensar P2 y P4) | Propiedad de `[:VIO {idVisualizacion}]`, con restricción de unicidad | Campo de `sesion:{idSesion}`, junto con la fecha de inicio | Columna de clustering de ambas tablas de historial | |
+| `idDispositivo` | `dispositivos._id` | | Campo de `sesion:{idSesion}` | | |
 | `idActor` | En `contenidos.elenco[].idActor` (copia para P7) | `(:Actor {id})` | | | |
 | `idLicencia` | En `contenidos.retiro.idLicencia` (motivo del retiro) | | | | `licencia.id_licencia` |
 | `idSaga` | `sagas._id` | En `retiradoPor` del nodo, durante P8 | | | |
@@ -106,9 +107,9 @@ Los ocho problemas usan al menos dos motores. En las escrituras, el orden va de 
 | Problema | Tipo | Motores | Orden de lecturas y escrituras | Compensación si falla | ID que los une |
 | --- | --- | --- | --- | --- | --- |
 | P1 Alta de serie | Escritura + rollback | Mongo, Neo4j | 1. Mongo: ficha con `estado: borrador` → 2. Neo4j: nodo, elenco, géneros y vínculos → 3. Mongo: `estado: publicado` | Borrar nodo y relaciones en Neo4j; borrar el borrador en Mongo | `idContenido` |
-| P2 Inicio de reproducción | Escritura + rollback | Redis, Mongo, Cassandra | 1. Mongo: leer `limiteSesiones` → 2. Redis: script Lua que verifica y reserva el cupo atómicamente → 3. Cassandra: registrar el inicio | Quitar la sesión del cupo en Redis (`ZREM`) y borrar `sesion:{id}` | `idSesion`, `idCuenta` |
-| P3 Progreso | Escritura | Redis, Cassandra | 1. Redis: `cv:{perfil}:{contenido}` con el segundo exacto → 2. Cassandra: evento de progreso cada N reportes | No aplica (último valor gana) | `idPerfil`, `idEpisodio` |
-| P4 Fin de episodio | Escritura + rollback | Cassandra, Redis, Neo4j | 1. Cassandra: `finalizado = true` → 2. Redis: `cv` apunta al episodio siguiente → 3. Neo4j: `MERGE (p)-[:VIO]->(c)` | Restaurar el `cv` anterior (guardado en el log de la saga); `finalizado = false` | `idPerfil`, `idEpisodio` |
+| P2 Inicio de reproducción | Escritura + rollback | Redis, Mongo, Cassandra | 1. Mongo: leer `limiteSesiones` → 2. Redis: script Lua que verifica y reserva el cupo atómicamente; se generan `idVisualizacion` y la fecha de inicio **una sola vez** y se guardan en `sesion:{id}` con el perfil y el contenido → 3. Cassandra: registrar el inicio (fila nueva de la visualización) | Quitar la sesión del cupo en Redis (`ZREM`) y borrar `sesion:{id}` | `idSesion`, `idCuenta`, `idVisualizacion` |
+| P3 Progreso | Escritura | Redis, Cassandra | 1. Redis: `cv:{perfil}:{contenido}` con la unidad y el segundo exacto (cada reporte) → 2. Cassandra: **upsert de la fila de la visualización en curso**, con la misma clave `(id_perfil, mes, fecha, id_visualizacion)`, actualizando `posicion_seg` y `fecha_fin`. Se hace cada N reportes **y al pausar o cerrar**. `idVisualizacion` y la fecha de inicio salen de `sesion:{id}` | No aplica: es un upsert de valor absoluto, repetirlo deja el mismo resultado. Si falla Cassandra, el siguiente checkpoint lo corrige | `idVisualizacion` (junto con `idPerfil` y el id de unidad) |
+| P4 Fin de episodio | Escritura + rollback | Cassandra, Redis, Neo4j | 1. Cassandra: `finalizado = true` sobre la fila de la visualización (misma clave) → 2. Redis: `cv` apunta al episodio siguiente → 3. Neo4j: `MERGE (p)-[r:VIO {idVisualizacion: $id}]->(c) ON CREATE SET r.fecha = $fecha` | Borrar la relación `VIO` por su `idVisualizacion`; restaurar el `cv` anterior (guardado en el log de la saga); `finalizado = false` por la misma clave. Todas idempotentes | `idVisualizacion`, `idPerfil`, `idEpisodio` |
 | P5 Recomendaciones | Consulta | Neo4j, Mongo, Redis | 1. Neo4j: recorrido desde los `VIO` recientes, excluyendo lo visto → 2. Mongo: fichas publicadas y aptas para la edad del perfil | No aplica | `idPerfil`, `idContenido` |
 | P6 Expiración y cierre | Escritura | Redis, Cassandra | Expiración: TTL de `sesion:{id}` + limpieza del cupo por `ultimaActividad`. Cierre remoto: vaciar `cupo:{cuenta}` y borrar sus sesiones → registrar el cierre en Cassandra | No aplica (es idempotente) | `idCuenta`, `idSesion` |
 | P7 Exploración | Consulta | Mongo, Redis, Neo4j | 1. Mongo: filtros combinados y cantidad de episodios → 2. Redis: progreso del perfil → 3. Neo4j: contenidos vinculados | No aplica | `idContenido`, `idPerfil` |
@@ -159,14 +160,30 @@ La serie *Dark* (`c-91bd`) y el perfil "Sofi" (`p-12ab`, de la cuenta `a-55e0`),
 (:Actor {id: 'ac-301', nombre: 'Louis Hofmann'})-[:ACTUA_EN {personaje: 'Jonas Kahnwald'}]->(:Contenido {id: 'c-91bd'})
 (:Contenido {id: 'c-91bd'})-[:DE_GENERO]->(:Genero {nombre: 'Ciencia ficción'})
 (:Contenido {id: 'c-1899'})-[:RELACIONADO {tipo: 'mismo_universo'}]->(:Contenido {id: 'c-91bd'})
-(:Perfil {id: 'p-12ab'})-[:VIO {fecha: date('2026-09-28'), veces: 1}]->(:Contenido {id: 'c-44f1'})
+(:Perfil {id: 'p-12ab'})-[:VIO {idVisualizacion: 'v-0a17', fecha: datetime('2026-09-28T22:10Z')}]->(:Contenido {id: 'c-44f1'})
+(:Perfil {id: 'p-12ab'})-[:VIO {idVisualizacion: 'v-3e92', fecha: datetime('2026-10-02T21:30Z')}]->(:Contenido {id: 'c-44f1'})
+```
+
+Hay una relación `VIO` por visualización terminada, y la cantidad de veces no se guarda: se calcula al consultar. Así, reintentar el paso de P4 o su compensación no suma ni resta de más.
+
+```cypher
+// unicidad de la señal (Neo4j 5.26 Community la soporta; también crea el índice que usa la compensación)
+CREATE CONSTRAINT vio_visualizacion IF NOT EXISTS FOR ()-[r:VIO]-() REQUIRE r.idVisualizacion IS UNIQUE;
+
+// P4, acción y compensación (las dos idempotentes)
+MERGE (p)-[r:VIO {idVisualizacion: $id}]->(c) ON CREATE SET r.fecha = $fecha
+MATCH ()-[r:VIO {idVisualizacion: $id}]->() DELETE r
+
+// veces y última vista, calculadas (en una serie, count(DISTINCT c) cuenta el contenido una sola vez)
+MATCH (:Perfil {id: $perfil})-[v:VIO]->(c) RETURN c, count(v) AS veces, max(v.fecha) AS ultima
 ```
 
 **Redis: sesión, cupo y "continuar viendo"**
 
 ```text
 ZSET  cupo:a-55e0          { s-7781 : 1791417600 }            # score = última actividad (epoch)
-HASH  sesion:s-7781        idPerfil=p-12ab idDispositivo=d-3310 inicio=2026-10-07T21:40Z   TTL 120 s
+HASH  sesion:s-7781        idPerfil=p-12ab idDispositivo=d-3310 idContenido=c-91bd idEpisodio=e-91bd-1-2
+                           idVisualizacion=v-5d20 fechaInicio=2026-10-07T21:40Z               TTL 120 s
 HASH  cv:p-12ab:c-91bd     idEpisodio=e-91bd-1-2 segundo=1325 actualizado=2026-10-07T21:52Z
 SET   viendo:c-91bd        { p-12ab }                          # perfiles mirando ahora (P8)
 ```
@@ -175,22 +192,35 @@ SET   viendo:c-91bd        { p-12ab }                          # perfiles mirand
 
 ```sql
 CREATE TABLE historial_por_perfil (
-  id_perfil uuid, mes text, fecha timestamp, id_contenido uuid, id_episodio uuid,
-  id_sesion uuid, id_dispositivo uuid, progreso_seg int, finalizado boolean,
-  PRIMARY KEY ((id_perfil, mes), fecha, id_episodio)
-) WITH CLUSTERING ORDER BY (fecha DESC, id_episodio ASC);
+  id_perfil uuid, mes text, fecha timestamp, id_visualizacion uuid,
+  id_contenido uuid, id_episodio uuid,      -- id_episodio: nulo en películas
+  id_sesion uuid, fecha_fin timestamp, posicion_seg int, finalizado boolean,
+  PRIMARY KEY ((id_perfil, mes), fecha, id_visualizacion)
+) WITH CLUSTERING ORDER BY (fecha DESC, id_visualizacion ASC);
 
 CREATE TABLE historial_por_contenido (
-  id_contenido uuid, fecha timestamp, id_perfil uuid, id_episodio uuid, id_sesion uuid,
-  progreso_seg int, finalizado boolean,
-  PRIMARY KEY ((id_contenido), fecha, id_perfil, id_episodio)
-) WITH CLUSTERING ORDER BY (fecha DESC, id_perfil ASC, id_episodio ASC);
+  id_contenido uuid, fecha timestamp, id_visualizacion uuid,
+  id_perfil uuid, id_episodio uuid, id_sesion uuid,
+  fecha_fin timestamp, posicion_seg int, finalizado boolean,
+  PRIMARY KEY ((id_contenido), fecha, id_visualizacion)
+) WITH CLUSTERING ORDER BY (fecha DESC, id_visualizacion ASC);
 ```
 
-| id_perfil | mes | fecha | id_contenido | id_episodio | progreso_seg | finalizado |
-| --- | --- | --- | --- | --- | --- | --- |
-| p-12ab | 2026-10 | 2026-10-07 21:40 | c-91bd | e-91bd-1-2 | 0 | false |
-| p-12ab | 2026-10 | 2026-10-07 21:02 | c-91bd | e-91bd-1-1 | 3060 | true |
+Reglas de la clave:
+
+- `fecha` es el **momento en que empezó la visualización** y no cambia mientras dura; `mes` se calcula a partir de ella. Una visualización que cruza el cambio de mes queda en la partición del mes en que empezó.
+- **P2** crea la fila; **P3** (cada checkpoint) y **P4** (`finalizado`) hacen upsert sobre la misma clave exacta. Reintentar cualquier paso no duplica filas.
+- Cada escritura va a las dos tablas en un `BATCH` *logged*: si una se aplica, Cassandra garantiza que la otra también.
+- Con `id_visualizacion` en la clave, `id_episodio` es una columna común y puede ser nula en películas.
+- Si Redis se pierde, "continuar viendo" se reconstruye leyendo la última fila de `(id_perfil, mes actual)` con `LIMIT 1` (y si el mes está vacío, el anterior).
+- `historial_por_contenido` particiona solo por contenido. Con 50.000 filas no es un problema; particionar por `(id_contenido, mes)` queda como mejora opcional para títulos muy vistos.
+
+Se probó en Cassandra 4.1 (keyspace descartable): tres checkpoints y dos `finalizado = true` sobre una visualización que empieza el 31/10 y termina el 1/11 dejan una sola fila, en la partición de octubre.
+
+| id_perfil | mes | fecha | id_visualizacion | id_contenido | id_episodio | fecha_fin | posicion_seg | finalizado |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| p-12ab | 2026-10 | 2026-10-07 21:40 | v-5d20 | c-91bd | e-91bd-1-2 | 2026-10-07 22:02 | 1325 | false |
+| p-12ab | 2026-10 | 2026-10-07 21:02 | v-41c8 | c-91bd | e-91bd-1-1 | 2026-10-07 21:53 | 3060 | true |
 
 **PostgreSQL: licencia**
 
@@ -233,4 +263,12 @@ Los números de este JSON son ilustrativos.
 | `clasificacionEdad` y `estado` del contenido | Mongo | Propiedades del nodo `:Contenido` en Neo4j | Filtrar recomendaciones dentro del recorrido (P5) | Sagas P1 y P8 |
 | Géneros | Mongo (nombres en la ficha) | Nodos `:Genero` en Neo4j | Recorridos "mismo género" | Saga P1 |
 | Perfiles mirando un contenido | Redis `sesion:{id}` | Redis `viendo:{idContenido}` | Contar en O(1) en P8 | Mismo script Lua de P2 y P6 |
-| Historial | Cassandra `historial_por_perfil` | Cassandra `historial_por_contenido` | Consultar por contenido (P8) | Un `BATCH` lógico de Cassandra en cada inserción |
+| Historial | Cassandra `historial_por_perfil` | Cassandra `historial_por_contenido` | Consultar por contenido (P8) | Un `BATCH` *logged* en cada escritura (inicio en P2, checkpoints en P3, fin en P4), con la misma clave en las dos tablas |
+
+## Historial de cambios
+
+| Fecha | Cambio | Motivo |
+| --- | --- | --- |
+| 2026-10-12 | **A1.** Historial en Cassandra: se agrega `id_visualizacion` a la clave y `fecha` pasa a ser la fecha de inicio, fija | Sin un id, cada checkpoint creaba una fila nueva y P4 no podía identificar la fila a marcar; una visualización que cruzaba de mes cambiaba de partición |
+| 2026-10-12 | **A2.** Señal `VIO` en Neo4j: una relación por visualización, identificada por `idVisualizacion`; el contador `veces` se calcula con `count()` | Un contador incrementado no es idempotente: reintentar el paso o la compensación de P4 sumaba o restaba de más |
+| 2026-10-12 | **A3.** P3 se redacta como upsert de la fila de la visualización en curso, también al pausar o cerrar | "Evento de progreso" se podía leer como una fila nueva por checkpoint; sin el checkpoint al cerrar se perdían los últimos segundos |
