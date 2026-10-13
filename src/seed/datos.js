@@ -8,6 +8,7 @@ export const VOLUMEN = {
 	contenidos: 500,
 	cuentas: 1000,
 	dispositivos: 3000,
+	vinculos: 1500,
 };
 
 const id = () => faker.string.uuid();
@@ -142,6 +143,59 @@ function generarDispositivo() {
 	return { _id: id(), tipo, modelo, sistemaOperativo, fechaRegistro: faker.date.past({ years: 3 }) };
 }
 
+const compartenGenero = (a, b) => a.generos.some((g) => b.generos.includes(g));
+
+// Vínculos entre contenidos (relación recursiva del DER, con su tipoRelacion).
+// "precuela" no se guarda: es la secuela leída al revés.
+function generarVinculos(contenidos) {
+	const vinculos = [];
+	const usados = new Set();
+	const clave = (a, b) => [a._id, b._id].sort().join('|');
+	const agregar = (origen, destino, tipo) => {
+		if (!origen || !destino || origen._id === destino._id || usados.has(clave(origen, destino))) return;
+		usados.add(clave(origen, destino));
+		vinculos.push({ idOrigen: origen._id, idDestino: destino._id, tipo });
+	};
+
+	// La serie demo siempre tiene una secuela, un contenido del mismo universo y uno similar
+	const [demo, ...resto] = contenidos;
+	const mismaPlataforma = resto.filter((c) => c.plataforma.id === demo.plataforma.id);
+	agregar(mismaPlataforma.find((c) => c.tipo === demo.tipo && c.anioEstreno >= demo.anioEstreno), demo, 'secuela');
+	agregar(mismaPlataforma.find((c) => !usados.has(clave(c, demo))), demo, 'mismo_universo');
+	agregar(demo, resto.find((c) => compartenGenero(c, demo) && !usados.has(clave(c, demo))), 'similar');
+
+	// Cada tipo con una regla que lo haga creíble
+	const reglas = {
+		similar: (a, b) => compartenGenero(a, b),
+		secuela: (a, b) => a.tipo === b.tipo && a.plataforma.id === b.plataforma.id,
+		mismo_universo: (a, b) => a.plataforma.id === b.plataforma.id,
+	};
+
+	while (vinculos.length < VOLUMEN.vinculos) {
+		const [a, b] = faker.helpers.arrayElements(contenidos, 2);
+		const tipo = faker.helpers.weightedArrayElement([
+			{ weight: 20, value: 'secuela' },
+			{ weight: 15, value: 'mismo_universo' },
+			{ weight: 65, value: 'similar' },
+		]);
+		if (!reglas[tipo](a, b)) continue; // el par no cumple la regla: se prueba con otro
+		// una secuela es posterior (o del mismo año) que la original
+		if (tipo === 'secuela' && a.anioEstreno < b.anioEstreno) agregar(b, a, tipo);
+		else agregar(a, b, tipo);
+	}
+	return vinculos;
+}
+
+function numerarTitulosRepetidos(contenidos) {
+	const ROMANOS = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+	const vistos = new Map();
+	for (const c of contenidos) {
+		const veces = vistos.get(c.titulo) ?? 0;
+		vistos.set(c.titulo, veces + 1);
+		if (veces > 0) c.titulo = `${c.titulo} ${ROMANOS[veces - 1]}`;
+	}
+}
+
 export function generarDatos() {
 	faker.seed(SEMILLA);
 	faker.setDefaultRefDate(FECHA_REFERENCIA);
@@ -176,11 +230,14 @@ export function generarDatos() {
 		serieDemo,
 		...Array.from({ length: VOLUMEN.contenidos - 1 }, () => generarContenido({ plataformas, actores })),
 	];
+	numerarTitulosRepetidos(contenidos);
 	const cuentas = [
 		cuentaDemo,
 		...Array.from({ length: VOLUMEN.cuentas - 1 }, (_, i) => generarCuenta(i + 1)),
 	];
 	const dispositivos = Array.from({ length: VOLUMEN.dispositivos }, generarDispositivo);
+
+	const vinculos = generarVinculos(contenidos);
 
 	return {
 		plataformas,
@@ -189,6 +246,7 @@ export function generarDatos() {
 		contenidos,
 		cuentas,
 		dispositivos,
+		vinculos,
 		demo: { serie: serieDemo, cuenta: cuentaDemo },
 	};
 }

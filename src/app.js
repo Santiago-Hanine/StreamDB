@@ -3,6 +3,8 @@ import express from 'express';
 import './db/mongo.js';
 import contenidos from './rutas/contenido.js';
 import { ErroresApp } from './lib/errores.js';
+import { client as mongo } from './db/mongo.js';
+import { driver as neo4j } from './db/neo4j.js';
 
 const API_PATH = process.env.API_PATH || '/api/v1';
 
@@ -38,4 +40,9 @@ app.use((err, req, res, next) => {
 // 4. Arrancar
 app.listen(process.env.PORT, () => {
 	console.log(`Server is running on port ${process.env.PORT}`);
+});
+
+process.on('SIGINT', async () => {
+	await Promise.allSettled([mongo.close(), neo4j.close()]);
+	process.exit(0);
 });

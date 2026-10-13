@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { esId } from '../lib/ids.js';
 import { pedidoInvalido, conflicto } from '../lib/errores.js';
+import { altaSerie } from '../problemas/p1-alta-serie.js';
 import { explorar } from '../problemas/p7-exploracion.js';
 
 const router = Router();
@@ -10,6 +11,12 @@ router.param('id', (req, res, next, id) => {
 	if (!esId(id)) throw pedidoInvalido(`"${id}" no es un id válido`);
 	next();
 });
+
+
+router.post('/series', async (req, res) => {
+	res.status(201).json(await altaSerie(req.body, { fallarEn: req.query.fallarEn }));
+});
+
 
 // P7: exploración (por ahora solo responde lo que recibió)
 router.get('/', async (req, res) => {
