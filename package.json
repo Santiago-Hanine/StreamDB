@@ -8,7 +8,8 @@
 		"start": "node src/app.js",
 		"dev": "nodemon src/app.js",
 		"setup:mongo": "node src/setup/mongo.js",
-		"seed:mongo": "node src/seed/mongo.js"
+		"seed:mongo": "node src/seed/mongo.js",
+		"prueba:saga": "node src/pruebas/saga.js"
 	},
 	"keywords": [],
 	"author": "",
