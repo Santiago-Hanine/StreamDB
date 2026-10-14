@@ -1,9 +1,25 @@
 import db from '../db/mongo.js';
+import { cypher } from '../db/neo4j.js';
 import { esId } from '../lib/ids.js';
 import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
 
 const LIMITE_POR_DEFECTO = 20;
 const LIMITE_MAXIMO = 50;
+
+async function buscarVinculados(ids, edadMaxima) {
+	const filas = await cypher(
+		`MATCH (c:Contenido) WHERE c.id IN $ids
+               OPTIONAL MATCH (c)-[r:RELACIONADO]-(o:Contenido)
+               WHERE o.estado = 'publicado' AND ($edad IS NULL OR o.clasificacionEdad <= $edad)
+               RETURN c.id AS id, collect(CASE WHEN o IS NULL THEN null ELSE {
+                 id: o.id,
+                 titulo: o.titulo,
+                 relacion: CASE WHEN r.tipo = 'secuela' AND startNode(r) = c THEN 'precuela' ELSE r.tipo END
+               } END) AS vinculados`,
+		{ ids, edad: edadMaxima ?? null },
+	);
+	return new Map(filas.map((f) => [f.id, f.vinculados]));
+}
 
 export async function explorar({ genero, idActor, idPlataforma, idPerfil, limite, pagina } = {}) {
 
@@ -61,15 +77,17 @@ export async function explorar({ genero, idActor, idPlataforma, idPerfil, limite
 		},
 	]).toArray();
 
+
 	// 5. Completar con los otros motores (solo para los contenidos de esta página)
+	const ids = resultado.contenidos.map((c) => c._id);
+	const vinculados = await buscarVinculados(ids, perfil?.clasificacionEdad);
 	// TODO Redis: si hay idPerfil, leer cv:{idPerfil}:{idContenido} de cada uno → progreso
-	// TODO Neo4j: un solo MATCH con todos los ids de la página → vinculados
 
 	return {
 		pagina,
 		limite,
 		total: resultado.total[0]?.n ?? 0,
 		perfil: perfil && { nombre: perfil.nombre, clasificacionEdad: perfil.clasificacionEdad },
-		contenidos: resultado.contenidos,
+		contenidos: resultado.contenidos.map((c) => ({ ...c, vinculados: vinculados.get(c._id) ?? [] })),
 	};
 }

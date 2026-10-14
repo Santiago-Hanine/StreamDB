@@ -1,10 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
 import './db/mongo.js';
-import contenidos from './rutas/contenido.js';
-import { ErroresApp } from './lib/errores.js';
 import { client as mongo } from './db/mongo.js';
 import { driver as neo4j } from './db/neo4j.js';
+import { redis } from './db/redis.js';
+
+import reproducciones from './rutas/reproducciones.js';
+import contenidos from './rutas/contenido.js';
+import { ErroresApp } from './lib/errores.js';
+
 
 const API_PATH = process.env.API_PATH || '/api/v1';
 
@@ -13,7 +17,7 @@ app.use(express.json());
 
 // 1. Rutas
 app.use(API_PATH + '/contenidos', contenidos);
-
+app.use(API_PATH + '/reproducciones', reproducciones);
 // 2. Ruta inexistente
 app.use((req, res) => {
 	res.status(404).json({ error: `No existe ${req.method} ${req.path}` });
@@ -43,6 +47,6 @@ app.listen(process.env.PORT, () => {
 });
 
 process.on('SIGINT', async () => {
-	await Promise.allSettled([mongo.close(), neo4j.close()]);
+	await Promise.allSettled([mongo.close(), neo4j.close(), redis.quit()]);
 	process.exit(0);
 });

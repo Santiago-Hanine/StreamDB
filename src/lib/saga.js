@@ -77,8 +77,9 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 				500, { ...detalle, sinCompensar });
 		} else {
 			await actualizar({ estado: 'compensada' });
-			errorFinal = new ErroresApp(
-				`${tipo} falló en "${pasos[i].nombre}" y se revirtió`, error.status ?? 500, detalle);
+			errorFinal = error instanceof ErroresApp && error.status < 500
+				? Object.assign(error, { detalle: { ...error.detalle, ...detalle } })
+				: new ErroresApp(`${tipo} falló en "${pasos[i].nombre}" y se revirtió`, error.status ?? 500, detalle);
 		}
 
 		errorFinal.idSaga = idSaga;
