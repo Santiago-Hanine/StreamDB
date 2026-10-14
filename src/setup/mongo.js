@@ -55,7 +55,7 @@ const colecciones = {
 										id: uuid,
 										numero: { bsonType: 'int', minimum: 1 },
 										titulo: { bsonType: 'string' },
-										duracionSeg: { bsonType: 'int', minimum: 1 },
+										duracionSeg: { bsonType: 'int', minimum: 1 }
 									},
 								},
 							},

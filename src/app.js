@@ -4,6 +4,7 @@ import './db/mongo.js';
 import { client as mongo } from './db/mongo.js';
 import { driver as neo4j } from './db/neo4j.js';
 import { redis } from './db/redis.js';
+import { cassandraClient } from './db/cassandra.js';
 
 import reproducciones from './rutas/reproducciones.js';
 import contenidos from './rutas/contenido.js';
@@ -47,6 +48,6 @@ app.listen(process.env.PORT, () => {
 });
 
 process.on('SIGINT', async () => {
-	await Promise.allSettled([mongo.close(), neo4j.close(), redis.quit()]);
+	await Promise.allSettled([mongo.close(), neo4j.close(), redis.quit(), cassandraClient.shutdown()]);
 	process.exit(0);
 });
