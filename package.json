@@ -9,6 +9,7 @@
 		"dev": "nodemon src/app.js",
 		"setup:mongo": "node src/setup/mongo.js",
 		"setup:neo4j": "node src/setup/neo4j.js",
+		"setup:cassandra": "node src/setup/cassandra.js",
 		"seed:mongo": "node src/seed/mongo.js",
 		"seed:neo4j": "node src/seed/neo4j.js",
 		"prueba:saga": "node src/pruebas/saga.js"
