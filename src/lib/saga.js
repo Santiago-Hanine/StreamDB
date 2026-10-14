@@ -14,7 +14,7 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 	const sagas = db.collection('sagas');
 	const idSaga = nuevoId();
 
-	// 1. Registrar la saga ANTES de escribir nada: si la app se cae, se sabe qué quedó a medias
+	// 1. Registrar la saga ANTES de escribir nada
 	await sagas.insertOne({
 		_id: idSaga, tipo, estado: 'en_curso', datos,
 		pasos: nombres.map((nombre) => ({ nombre, estado: 'pendiente' })),
