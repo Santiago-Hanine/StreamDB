@@ -61,6 +61,13 @@ try {
 	await cargar('perfiles', datos.cuentas.flatMap((c) => c.perfiles.map((p) => ({ id: p.id }))),
 		'UNWIND $filas AS f MERGE (:Perfil {id: f.id})');
 
+	await cargar('señales VIO', datos.visualizaciones.filter((v) => v.finalizado).map((v) => ({
+		idVisualizacion: v.idVisualizacion, idPerfil: v.idPerfil, idContenido: v.idContenido,
+		fecha: v.fechaFin.toISOString(),
+	})), `UNWIND $filas AS f
+            MATCH (p:Perfil {id: f.idPerfil}), (c:Contenido {id: f.idContenido})
+            MERGE (p)-[r:VIO {idVisualizacion: f.idVisualizacion}]->(c) SET r.fecha = datetime(f.fecha)`);
+
 	console.log(`  (semilla ${SEMILLA})`);
 } finally {
 	await driver.close();

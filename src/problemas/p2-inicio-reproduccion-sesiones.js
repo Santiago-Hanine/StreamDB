@@ -1,5 +1,7 @@
 import db from '../db/mongo.js';
 import { redis } from '../db/redis.js';
+import { cassandraClient } from '../db/cassandra.js';
+
 import { nuevoId, esId } from '../lib/ids.js';
 import { ErroresApp, pedidoInvalido, noEncontrado, conflicto } from '../lib/errores.js';
 import { ejecutarSaga } from '../lib/saga.js';
@@ -12,6 +14,8 @@ export const claves = {
 	sesion: (idSesion) => `sesion:${idSesion}`,     // HASH: datos de la sesión, con TTL
 	viendo: (idContenido) => `viendo:${idContenido}`, // ZSET: sesiones mirando el contenido (P8)
 };
+
+// Redis consultas:
 
 // Todo en una sola operación atómica:
 // 1. saca del cupo las sesiones vencidas  2. si ya está esta sesión, no hace nada (idempotente)
@@ -36,6 +40,18 @@ redis.call('ZREM', KEYS[1], ARGV[1])
 redis.call('DEL', KEYS[2])
 redis.call('ZREM', KEYS[3], ARGV[1])
 return 1`;
+
+// Cassandra consultas:
+
+const INSERTAR_POR_PERFIL = `INSERT INTO historial_por_perfil
+  (id_perfil, mes, fecha, id_visualizacion, id_contenido, id_episodio, id_sesion, fecha_fin, posicion_seg, finalizado)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+const INSERTAR_POR_CONTENIDO = `INSERT INTO historial_por_contenido
+  (id_contenido, fecha, id_visualizacion, id_perfil, id_episodio, id_sesion, fecha_fin, posicion_seg, finalizado)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+const BORRAR_POR_PERFIL = 'DELETE FROM historial_por_perfil WHERE id_perfil = ? AND mes = ? AND fecha = ? AND id_visualizacion = ?';
+const BORRAR_POR_CONTENIDO = 'DELETE FROM historial_por_contenido WHERE id_contenido = ? AND fecha = ? AND id_visualizacion = ?';
 
 async function validar({ idPerfil, idDispositivo, idContenido, idEpisodio } = {}) {
 	const errores = [];
@@ -76,11 +92,11 @@ async function validar({ idPerfil, idDispositivo, idContenido, idEpisodio } = {}
 		throw pedidoInvalido('Una película no tiene episodios');
 	}
 
-	return { cuenta, unidad };
+	return { cuenta, unidad, esSerie: contenido.tipo === 'serie' };
 }
 
 export async function iniciarReproduccion(pedido, { fallarEn } = {}) {
-	const { cuenta, unidad } = await validar(pedido);
+	const { cuenta, unidad, esSerie } = await validar(pedido);
 	const { idPerfil, idDispositivo, idContenido } = pedido;
 
 	// Se generan UNA vez: viajan a Redis, a Cassandra (registrar_inicio) y después a Neo4j (P4)
@@ -88,6 +104,9 @@ export async function iniciarReproduccion(pedido, { fallarEn } = {}) {
 	const idVisualizacion = nuevoId();
 	const fechaInicio = new Date();
 	const keys = [claves.cupo(cuenta._id), claves.sesion(idSesion), claves.viendo(idContenido)];
+
+	const mes = fechaInicio.toISOString().slice(0, 7);
+	const idEpisodio = esSerie ? unidad : null;       // en películas la unidad es el contenido, pero en Cassandra va null
 
 	await ejecutarSaga({
 		tipo: 'inicio_reproduccion',
@@ -122,9 +141,31 @@ export async function iniciarReproduccion(pedido, { fallarEn } = {}) {
 			},
 			{
 				nombre: 'registrar_inicio', // Cassandra
-				// TODO Cassandra: insertar la fila de la visualización (historial_por_perfil y por_contenido)
-				ejecutar: async () => { },
-				compensar: async () => { },
+				ejecutar: async () => {
+					// Si una de las dos inserciones se aplica, Cassandra garantiza la otra
+					await cassandraClient.batch(
+						[
+							{
+								query: INSERTAR_POR_PERFIL,
+								params: [idPerfil, mes, fechaInicio, idVisualizacion, idContenido, idEpisodio, idSesion, fechaInicio, 0, false],
+							},
+							{
+								query: INSERTAR_POR_CONTENIDO,
+								params: [idContenido, fechaInicio, idVisualizacion, idPerfil, idEpisodio, idSesion, fechaInicio, 0, false],
+							},
+						],
+						{ prepare: true, logged: true },
+					);
+				},
+				compensar: async () => {
+					await cassandraClient.batch(
+						[
+							{ query: BORRAR_POR_PERFIL, params: [idPerfil, mes, fechaInicio, idVisualizacion] },
+							{ query: BORRAR_POR_CONTENIDO, params: [idContenido, fechaInicio, idVisualizacion] },
+						],
+						{ prepare: true, logged: true },
+					);
+				},
 			},
 		],
 	});

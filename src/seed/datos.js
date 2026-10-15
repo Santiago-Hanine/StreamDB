@@ -9,6 +9,7 @@ export const VOLUMEN = {
 	cuentas: 1000,
 	dispositivos: 3000,
 	vinculos: 1500,
+	visualizaciones: 50000
 };
 
 const id = () => faker.string.uuid();
@@ -196,6 +197,51 @@ function numerarTitulosRepetidos(contenidos) {
 	}
 }
 
+const DESDE = new Date('2026-04-01T00:00:00.000Z').getTime();
+const HASTA = new Date(FECHA_REFERENCIA).getTime();
+
+function generarVisualizaciones(contenidos, cuentas, dispositivos) {
+	const aptos = new Map(); // edad del perfil → contenidos que puede ver
+	for (const edad of [0, 7, 13, 16, 18]) aptos.set(edad, contenidos.filter((c) => c.clasificacionEdad <= edad));
+	const perfiles = cuentas.filter((c) => c.estado === 'activa').flatMap((c) => c.perfiles);
+
+	const visualizaciones = [];
+	while (visualizaciones.length < VOLUMEN.visualizaciones) {
+		const perfil = faker.helpers.arrayElement(perfiles);
+		const contenido = faker.helpers.arrayElement(aptos.get(perfil.clasificacionEdad));
+		const dispositivo = faker.helpers.arrayElement(dispositivos);
+
+		// Lo que mira en esta tanda: en una serie, varios episodios seguidos desde el primero
+		const unidades = contenido.tipo === 'serie'
+			? contenido.temporadas.flatMap((t) => t.episodios).slice(0, entre(1, 8))
+			: [{ id: null, duracionSeg: contenido.duracionSeg }];
+
+		let fecha = entre(DESDE, HASTA - 7 * 86400000);
+		const idSesion = id();
+		unidades.forEach((unidad, i) => {
+			const esLaUltima = i === unidades.length - 1;
+			const finalizado = !esLaUltima || faker.datatype.boolean({ probability: 0.6 });
+			const posicionSeg = finalizado ? unidad.duracionSeg : entre(60, unidad.duracionSeg - 60);
+			const fechaFin = new Date(fecha + posicionSeg * 1000);
+			visualizaciones.push({
+				idVisualizacion: id(),
+				idPerfil: perfil.id,
+				idContenido: contenido._id,
+				idEpisodio: unidad.id, // null en películas
+				idSesion,
+				idDispositivo: dispositivo._id,
+				fechaInicio: new Date(fecha),
+				fechaFin,
+				posicionSeg,
+				finalizado,
+			});
+			fecha = fechaFin.getTime() + entre(1, 72) * 3600000; // el siguiente episodio, horas después
+		});
+	}
+	return visualizaciones.slice(0, VOLUMEN.visualizaciones);
+}
+
+
 export function generarDatos() {
 	faker.seed(SEMILLA);
 	faker.setDefaultRefDate(FECHA_REFERENCIA);
@@ -239,6 +285,8 @@ export function generarDatos() {
 
 	const vinculos = generarVinculos(contenidos);
 
+	const visualizaciones = generarVisualizaciones(contenidos, cuentas, dispositivos);
+
 	return {
 		plataformas,
 		generos: GENEROS,
@@ -248,5 +296,6 @@ export function generarDatos() {
 		dispositivos,
 		vinculos,
 		demo: { serie: serieDemo, cuenta: cuentaDemo },
+		visualizaciones
 	};
 }

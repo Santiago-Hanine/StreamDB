@@ -12,6 +12,8 @@
 		"setup:cassandra": "node src/setup/cassandra.js",
 		"seed:mongo": "node src/seed/mongo.js",
 		"seed:neo4j": "node src/seed/neo4j.js",
+		"seed:cassandra": "node src/seed/cassandra.js",
+		"seed": "npm run seed:mongo && npm run seed:neo4j && npm run seed:cassandra",
 		"prueba:saga": "node src/pruebas/saga.js"
 	},
 	"keywords": [],
