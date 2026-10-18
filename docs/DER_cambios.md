@@ -195,8 +195,9 @@ una película es la del propio contenido.
 ### 2.12 La recursiva se guarda en un solo sentido (propuesta propia)
 
 `secuela` y `precuela` son inversas: guardar las dos es redundante y expone a inconsistencias (A secuela
-de B pero B no precuela de A). Regla: **se almacena solo `secuela`** (origen = el anterior, destino = el
-que continúa) y `precuela` se obtiene recorriendo la relación al revés. `similar` y `mismo_universo`
+de B pero B no precuela de A). Regla: **se almacena solo `secuela`**, leída como "origen es secuela de
+destino" (`(A)-[secuela]->(B)`: A continúa a B, así lo cargan el seed y lo leen P5 y P7), y `precuela` se
+obtiene recorriendo la relación al revés. `similar` y `mismo_universo`
 son simétricas y se consultan sin dirección en Neo4j.
 
 ### 2.13 Typo corregido
@@ -278,27 +279,33 @@ El enunciado exige declarar qué dato se duplica, dónde vive y quién lo mantie
 
 ## 6. Fuera del DER
 
-El `operationId` y el log de sagas (`saga_log` en Mongo) son infraestructura de consistencia, no del
+El `operationId` y el log de sagas (colección `sagas` en Mongo) son infraestructura de consistencia, no del
 dominio, y por eso no están en el DER. Se documentan en la sección 6 del informe.
 
-## 7. Decisiones abiertas y ajustes pendientes en la matriz
+## 7. Decisiones y ajustes aplicados en la matriz (2026-10-12)
 
-Este DER y `matriz-trazabilidad.md` / el código tienen que quedar alineados. Hoy hay diferencias:
+`matriz-trazabilidad.md` ya quedó alineada con este DER:
 
-- **D1 — Película sin episodio implícito. RESUELTA (2026-10-08).** El esquema de Mongo guarda `duracionSeg`
-  en la película y `temporadas` solo en series; el DER se alineó con eso (ver 2.1). Queda por aplicar en
-  el código/matriz: para películas, `id_episodio` (Cassandra) y el `idEpisodio` del hash `cv` (Redis)
-  valen el `idContenido`; resolverlo en un único helper.
-- **A1 — Historial en Cassandra.** Agregar `id_visualizacion` a `historial_por_perfil` y
-  `historial_por_contenido`, y definir que `fecha` es el inicio fijo de la visualización (regla 1 de 2.2).
-- **A2 — Señal `VIO` de P4.** Reemplazar `VIO {fecha, veces}` por una relación idempotente (regla 3 de 2.2).
-- **A3 — P3.** En la matriz dice "evento de progreso cada N reportes"; debe decir upsert sobre la misma
-  fila de Visualizacion.
-- **A4 — Licencia** ya está en la matriz; solo falta reflejar `Cubre` y `Concede` como relaciones (ya
-  están en este DER).
+- **D1 — película como su propia unidad reproducible:** en Cassandra `id_episodio` es columna común (nula en
+  películas); en Redis, el `idEpisodio` de `cv` vale el `idContenido` para películas.
+- **A1 — Historial en Cassandra:** `id_visualizacion` en la clave de ambas tablas y `fecha` = inicio fijo.
+- **A2 — Señal `VIO` de P4:** una relación por visualización, con restricción de unicidad.
+- **A3 — P3:** upsert sobre la misma fila de Visualizacion, también al pausar o cerrar.
+- **Licencia:** implementada en PostgreSQL (`src/setup/postgres.js`, tabla `licencia` con la restricción
+  de no superposición), con su seed y su uso en P8.
 
 ## 8. Cómo editar el diagrama
 
 `DER_StreamDB_v2.drawio` se abre en [diagrams.net](https://app.diagrams.net) (Archivo → Abrir desde
-dispositivo) o con la extensión *Draw.io Integration* de VS Code. Para el entregable en PDF:
-Archivo → Exportar como → PDF (con la opción "Ajustar a una página").
+dispositivo) o con la extensión *Draw.io Integration* de VS Code.
+
+El entregable ya está exportado: [DER_StreamDB_v2.pdf](DER_StreamDB_v2.pdf) (vectorial, se puede ampliar
+sin perder calidad) y [DER_StreamDB_v2.png](DER_StreamDB_v2.png) (para insertar en el informe). Si se cambia
+el diagrama, se regeneran con la app de escritorio de draw.io:
+
+```bash
+drawio --export --format pdf --crop --output docs/DER_StreamDB_v2.pdf docs/DER_StreamDB_v2.drawio
+drawio --export --format png --scale 1 --border 20 --output docs/DER_StreamDB_v2.png docs/DER_StreamDB_v2.drawio
+```
+
+(Con `--scale` mayor a 1 el PNG puede salir cortado: el renderizador se queda sin memoria con un diagrama tan ancho.)
