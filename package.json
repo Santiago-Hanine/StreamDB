@@ -10,11 +10,16 @@
 		"setup:mongo": "node src/setup/mongo.js",
 		"setup:neo4j": "node src/setup/neo4j.js",
 		"setup:cassandra": "node src/setup/cassandra.js",
+		"setup:postgres": "node src/setup/postgres.js",
+		"setup": "npm run setup:mongo && npm run setup:neo4j && npm run setup:cassandra && npm run setup:postgres",
 		"seed:mongo": "node src/seed/mongo.js",
 		"seed:neo4j": "node src/seed/neo4j.js",
 		"seed:cassandra": "node src/seed/cassandra.js",
-		"seed": "npm run seed:mongo && npm run seed:neo4j && npm run seed:cassandra",
-		"prueba:saga": "node src/pruebas/saga.js"
+		"seed:postgres": "node src/seed/postgres.js",
+		"seed:redis": "node src/seed/redis.js",
+		"seed": "npm run seed:mongo && npm run seed:neo4j && npm run seed:cassandra && npm run seed:postgres && npm run seed:redis",
+		"prueba:saga": "node src/pruebas/saga.js",
+		"prueba:concurrencia": "node src/pruebas/concurrencia.js"
 	},
 	"keywords": [],
 	"author": "",
@@ -26,6 +31,7 @@
 		"express": "^5.2.1",
 		"mongodb": "^7.7.0",
 		"neo4j-driver": "^6.2.0",
+		"pg": "^8.23.1",
 		"redis": "^6.3.0"
 	},
 	"devDependencies": {

@@ -5,20 +5,33 @@ import { client as mongo } from './db/mongo.js';
 import { driver as neo4j } from './db/neo4j.js';
 import { redis } from './db/redis.js';
 import { cassandraClient } from './db/cassandra.js';
+import { pool as postgres } from './db/postgres.js';
 
 import reproducciones from './rutas/reproducciones.js';
 import contenidos from './rutas/contenido.js';
+import perfiles from './rutas/perfiles.js';
+import cuentas from './rutas/cuentas.js';
+import licencias from './rutas/licencias.js';
+import { iniciarVigilancia } from './problemas/p6-expiracion-cierre-sesiones.js';
 import { ErroresApp } from './lib/errores.js';
+import * as traza from './demo/traza.js';
+import demo from './demo/rutas.js';
 
 
 const API_PATH = process.env.API_PATH || '/api/v1';
 
 export const app = express();
 app.use(express.json());
+// Panel de demo: registra qué hace cada motor en los pedidos que traen el encabezado x-traza
+app.use(traza.middleware);
 
 // 1. Rutas
 app.use(API_PATH + '/contenidos', contenidos);
 app.use(API_PATH + '/reproducciones', reproducciones);
+app.use(API_PATH + '/perfiles', perfiles);
+app.use(API_PATH + '/cuentas', cuentas);
+app.use(API_PATH + '/licencias', licencias);
+app.use('/demo', demo); // panel para ejecutar cada problema y cada falla (http://localhost:PORT/demo)
 // 2. Ruta inexistente
 app.use((req, res) => {
 	res.status(404).json({ error: `No existe ${req.method} ${req.path}` });
@@ -47,7 +60,12 @@ app.listen(process.env.PORT, () => {
 	console.log(`Server is running on port ${process.env.PORT}`);
 });
 
+// P6: las sesiones inactivas expiran solas (listener de expiraciones de Redis + barrido de respaldo).
+// Fuera de todo pedido: lo que hacen queda como "proceso de fondo" en la traza del panel
+const detenerVigilancia = await iniciarVigilancia();
+
 process.on('SIGINT', async () => {
-	await Promise.allSettled([mongo.close(), neo4j.close(), redis.quit(), cassandraClient.shutdown()]);
+	await detenerVigilancia();
+	await Promise.allSettled([mongo.close(), neo4j.close(), redis.quit(), cassandraClient.shutdown(), postgres.end()]);
 	process.exit(0);
 });

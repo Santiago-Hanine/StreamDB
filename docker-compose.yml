@@ -37,8 +37,26 @@ services:
       retries: 10
       start_period: 180s # Cassandra tarda en arrancar
 
+  # Motor relacional adicional: solo para las licencias (P8). Lo justifica la regla
+  # "un contenido no puede tener dos licencias superpuestas en la misma región",
+  # que PostgreSQL garantiza con una restricción EXCLUDE sobre el rango de fechas.
+  postgres:
+    image: postgres:16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_USER: streamdb
+      POSTGRES_PASSWORD: streamdb
+      POSTGRES_DB: streamdb
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamdb -d streamdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   redis_data:
   mongo_data:
   neo4j_data:
   cassandra_data:
+  postgres_data:

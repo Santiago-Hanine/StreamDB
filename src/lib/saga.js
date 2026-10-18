@@ -39,8 +39,9 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 				throw new ErroresApp(`Falla provocada en "${pasos[i].nombre}"`, 500);
 			}
 			// Lo que devuelve ejecutar() se guarda y después se le pasa a compensar()
-			// (ej. en P4: el "continuar viendo" anterior, para poder restaurarlo)
-			const resultado = await pasos[i].ejecutar();
+			// (ej. en P4: el "continuar viendo" anterior, para poder restaurarlo).
+			// Recibe el idSaga, para los pasos que dejan registrado qué operación los hizo (ej. P8)
+			const resultado = await pasos[i].ejecutar({ idSaga });
 			hechos.push({ i, resultado });
 			await marcarPaso(i, 'hecho', esObjeto(resultado) ? { datos: resultado } : {});
 		}

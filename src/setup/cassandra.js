@@ -31,6 +31,14 @@ const esquema = [
          fecha_fin timestamp, posicion_seg int, finalizado boolean,
          PRIMARY KEY ((id_contenido), fecha, id_visualizacion)
        ) WITH CLUSTERING ORDER BY (fecha DESC, id_visualizacion ASC)`,
+
+	// Historial de sesiones de una cuenta (P6): una fila por sesión cerrada, con cuándo y por qué.
+	// Las sesiones activas viven en Redis; acá queda el registro cuando se cierran.
+	`CREATE TABLE IF NOT EXISTS ${KEYSPACE}.sesiones_por_cuenta (
+         id_cuenta uuid, fecha_inicio timestamp, id_sesion uuid,
+         id_perfil uuid, id_dispositivo uuid, fecha_fin timestamp, motivo_cierre text,
+         PRIMARY KEY ((id_cuenta), fecha_inicio, id_sesion)
+       ) WITH CLUSTERING ORDER BY (fecha_inicio DESC, id_sesion ASC)`,
 ];
 
 try {

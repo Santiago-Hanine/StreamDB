@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreamDB · Panel de demo</title>
+<style>
+:root {
+	--fondo: #f6f7f9; --panel: #ffffff; --borde: #e3e6eb; --texto: #1d2330; --suave: #5d6677; --tenue: #8b93a3;
+	--acento: #2f5bea; --ok: #1f9d55; --alerta: #c77c02; --error: #d33a3a; --hover: #f0f2f6; --codigo: #f3f4f7;
+	--mongo: #13994a; --redis: #d4382c; --neo4j: #0a7fd8; --cassandra: #7a57d1; --postgres: #2f5f8f; --log: #9aa1ae;
+	--sombra: 0 1px 2px rgba(20, 30, 50, .06), 0 1px 8px rgba(20, 30, 50, .04);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--fondo: #12151b; --panel: #1a1e26; --borde: #2a303b; --texto: #e6e9ef; --suave: #a3abba; --tenue: #747d8d;
+		--acento: #7896ff; --hover: #222833; --codigo: #151920; --log: #6b7280;
+		--mongo: #3ccb75; --redis: #f2665b; --neo4j: #4fb0ff; --cassandra: #a68bf0; --postgres: #6f9fd0;
+		--sombra: none;
+	}
+}
+:root[data-theme="dark"] {
+	--fondo: #12151b; --panel: #1a1e26; --borde: #2a303b; --texto: #e6e9ef; --suave: #a3abba; --tenue: #747d8d;
+	--acento: #7896ff; --hover: #222833; --codigo: #151920; --log: #6b7280;
+	--mongo: #3ccb75; --redis: #f2665b; --neo4j: #4fb0ff; --cassandra: #a68bf0; --postgres: #6f9fd0;
+	--sombra: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+	background: var(--fondo); color: var(--texto);
+	font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+select { font: inherit; color: var(--texto); background: var(--panel); border: 1px solid var(--borde); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* Encabezado */
+header { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--borde); }
+.barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px; }
+.marca { font-weight: 700; font-size: 15px; white-space: nowrap; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px; }
+.contexto { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin-left: auto; }
+.contexto label { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; color: var(--suave); font-size: 12px; }
+.sesion { font-size: 12.5px; color: var(--suave); padding: 3px 8px; border: 1px dashed var(--borde); border-radius: 6px; white-space: nowrap; }
+.boton { border: 1px solid var(--borde); background: var(--panel); border-radius: 6px; padding: 5px 10px; }
+.boton:hover { background: var(--hover); }
+.boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600; }
+.boton.primario:hover { filter: brightness(1.08); }
+.boton:disabled { opacity: .55; cursor: wait; }
+
+/* Chips de motor */
+.motor { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+	color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); }
+.motor::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.c-mongo { --c: var(--mongo); } .c-redis { --c: var(--redis); } .c-neo4j { --c: var(--neo4j); }
+.c-cassandra { --c: var(--cassandra); } .c-postgres { --c: var(--postgres); } .c-log { --c: var(--log); }
+
+/* Estructura */
+.layout { display: grid; grid-template-columns: 210px minmax(0, 1fr) 340px; gap: 16px; padding: 16px; align-items: start; }
+nav { position: sticky; top: calc(var(--alto-header, 60px) + 16px); display: flex; flex-direction: column; gap: 4px; }
+nav button { display: grid; grid-template-columns: 30px 1fr; align-items: center; text-align: left; gap: 2px 6px; border: 1px solid transparent;
+	background: none; border-radius: 8px; padding: 7px 8px; }
+nav button:hover { background: var(--hover); }
+nav button[aria-current="true"] { background: var(--panel); border-color: var(--borde); box-shadow: var(--sombra); }
+nav .num { font-weight: 700; color: var(--acento); }
+nav .nom { font-size: 13px; line-height: 1.3; }
+nav .puntos { grid-column: 2; display: flex; gap: 3px; }
+nav .puntos i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+aside { position: sticky; top: calc(var(--alto-header, 60px) + 16px); height: calc(100vh - var(--alto-header, 60px) - 32px); overflow: auto; }
+.tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; box-shadow: var(--sombra); }
+.cuerpo { padding: 16px; }
+h2 { margin: 0 0 4px; font-size: 19px; }
+h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+.resumen { margin: 0; color: var(--suave); max-width: 75ch; }
+
+/* Problema */
+.roles { display: grid; gap: 8px; margin-top: 14px; }
+.rol { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: baseline; }
+.rol p { margin: 0; }
+.fallas-reales { margin-top: 14px; border-top: 1px solid var(--borde); padding-top: 12px; }
+.fallas-reales summary { cursor: pointer; color: var(--suave); font-size: 13px; }
+.fallas-reales ol { margin: 8px 0 0; padding-left: 20px; }
+.fallas-reales li { margin-bottom: 6px; }
+.fallas-reales code { background: var(--codigo); border: 1px solid var(--borde); border-radius: 4px; padding: 1px 5px; }
+
+/* Escenarios */
+.escenarios { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.escenario { border: 1px solid var(--borde); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.escenario h4 { margin: 0; font-size: 14px; }
+.escenario p { margin: 0; color: var(--suave); font-size: 13px; }
+.escenario .peticion { font-size: 12px; color: var(--tenue); word-break: break-all; }
+.acciones { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: auto; }
+.fallar { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 12px; color: var(--suave); }
+.fallar button { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed color-mix(in srgb, var(--error) 55%, var(--borde));
+	background: none; border-radius: 6px; padding: 2px 7px; font-size: 12px; }
+.fallar button:hover { background: color-mix(in srgb, var(--error) 9%, transparent); }
+.fallar button i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+
+/* Resultados */
+.resultados-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.resultados-cab label { font-size: 13px; color: var(--suave); display: flex; gap: 6px; align-items: center; }
+.vacio { color: var(--tenue); font-size: 13px; padding: 8px 0; }
+.ejecucion { border: 1px solid var(--borde); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+.ejecucion > .titulo { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 10px 12px; background: var(--hover); }
+.ejecucion > .titulo strong { font-size: 14px; }
+.etiqueta { font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 4px; background: var(--codigo); border: 1px solid var(--borde); color: var(--suave); }
+.etiqueta.falla { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--borde)); }
+.pedido { border-top: 1px solid var(--borde); }
+.pedido > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 9px 12px; }
+.pedido > summary::-webkit-details-marker { display: none; }
+.pedido > summary::before { content: "▸"; color: var(--tenue); width: 10px; }
+.pedido[open] > summary::before { content: "▾"; }
+.pedido .linea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+.estado { font-weight: 700; font-size: 12px; padding: 1px 7px; border-radius: 4px; color: #fff; }
+.e2 { background: var(--ok); } .e4 { background: var(--alerta); } .e5 { background: var(--error); }
+.ms { color: var(--suave); font-size: 12.5px; }
+.uso { display: flex; flex-wrap: wrap; gap: 4px; }
+.detalle-pedido { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 12px; }
+.relato { margin: 0; padding: 8px 10px; border-left: 3px solid var(--acento); background: color-mix(in srgb, var(--acento) 7%, transparent); border-radius: 0 6px 6px 0; font-size: 13px; }
+.ejecucion > .relato { margin: 10px 12px; }
+.relato.mal { border-color: var(--error); background: color-mix(in srgb, var(--error) 7%, transparent); }
+
+/* Cambios antes → después */
+.cambios { border-top: 1px solid var(--borde); padding: 10px 12px 12px; }
+.cambios h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); }
+.tabla-cambios { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tabla-cambios th { text-align: left; font-size: 11.5px; color: var(--suave); font-weight: 600; padding: 4px 8px; background: var(--hover); }
+.tabla-cambios td { padding: 4px 8px; border-top: 1px solid var(--borde); vertical-align: top; overflow-wrap: anywhere; }
+.tabla-cambios td.k { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--suave); }
+.tabla-cambios td.antes { color: var(--tenue); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--tenue) 60%, transparent); }
+.tabla-cambios tr.log td { color: var(--tenue); }
+.ejecucion > .titulo .copiar { margin-left: auto; font-size: 12px; padding: 3px 9px; }
+@media (max-width: 760px) { .tabla-cambios th:first-child, .tabla-cambios td:first-child { display: none; } }
+
+/* Saga */
+.saga { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.saga .nombre { font-size: 12px; color: var(--suave); margin-right: 4px; }
+.paso { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--borde); border-left: 4px solid var(--c); border-radius: 6px; padding: 3px 8px; font-size: 12.5px; }
+.paso b { font-weight: 600; }
+.paso small { font-size: 11.5px; font-weight: 600; }
+.paso.hecho small { color: var(--ok); } .paso.fallido small { color: var(--error); } .paso.compensado small { color: var(--alerta); } .paso.pendiente small { color: var(--tenue); }
+.paso.fallido { background: color-mix(in srgb, var(--error) 8%, transparent); }
+.flecha { color: var(--tenue); }
+
+/* Línea de tiempo */
+.tiempo { display: grid; grid-template-columns: 52px 92px minmax(0, 1fr) 30%; font-size: 12.5px; border: 1px solid var(--borde); border-radius: 6px; overflow: hidden; }
+.tiempo > div { padding: 4px 8px; border-top: 1px solid var(--borde); display: flex; align-items: center; min-width: 0; }
+.tiempo > .cab { border-top: 0; background: var(--hover); color: var(--suave); font-size: 11.5px; font-weight: 600; }
+.tiempo .t { color: var(--tenue); justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.tiempo .que { gap: 6px; }
+.tiempo .que { cursor: pointer; }
+.tiempo .que:hover { background: var(--hover); }
+.tiempo .que code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tiempo .que .entera, .tiempo .que.abierta .corta { display: none; }
+.tiempo .que.abierta { align-items: flex-start; flex-wrap: wrap; }
+.tiempo .que.abierta .entera { display: block; flex-basis: 100%; white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+.tiempo .op { font-weight: 700; font-size: 11.5px; flex: none; }
+.tiempo .err { color: var(--error); font-size: 11.5px; flex: none; }
+.tiempo .esLog { color: var(--tenue); }
+.tiempo .fondo-tag { font-size: 10.5px; font-weight: 700; color: var(--alerta); flex: none; }
+.pista { position: relative; height: 12px; width: 100%; background: var(--codigo); border-radius: 3px; }
+.pista span { position: absolute; top: 0; bottom: 0; min-width: 3px; border-radius: 3px; background: var(--c); }
+.tiempo .dur { margin-left: 6px; color: var(--tenue); font-variant-numeric: tabular-nums; flex: none; font-size: 11.5px; }
+.tiempo .barra-celda { gap: 0; }
+.respuesta summary { cursor: pointer; font-size: 13px; color: var(--suave); }
+.respuesta pre { margin: 6px 0 0; background: var(--codigo); border: 1px solid var(--borde); border-radius: 6px; padding: 10px; max-height: 340px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* Estado de los motores */
+.estado-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--borde); }
+.estado-cab h3 { margin: 0; }
+.estado-cab small { color: var(--tenue); }
+.motor-estado { padding: 10px 14px; border-bottom: 1px solid var(--borde); }
+.motor-estado:last-child { border-bottom: 0; }
+.motor-estado .cab { margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+.motor-estado .rol-corto { font-size: 11.5px; color: var(--tenue); }
+.fila { display: grid; grid-template-columns: minmax(0, 44%) 1fr; gap: 8px; font-size: 12.5px; padding: 2px 4px; border-radius: 4px; }
+.fila .k { color: var(--suave); overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+.fila .v { overflow-wrap: anywhere; }
+.fila.cambio { background: color-mix(in srgb, var(--alerta) 16%, transparent); animation: brillo 2.4s ease-out; }
+.fila.cambio .v::after { content: " ●"; color: var(--alerta); }
+@keyframes brillo { from { background: color-mix(in srgb, var(--alerta) 45%, transparent); } }
+.aviso { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--texto); color: var(--panel); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+.aviso.visible { opacity: 1; }
+
+@media (max-width: 1180px) {
+	.layout { grid-template-columns: 190px minmax(0, 1fr); }
+	aside { grid-column: 1 / -1; position: static; height: auto; }
+}
+@media (max-width: 760px) {
+	.layout { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; }
+	nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+	nav button { flex: none; grid-template-columns: auto; }
+	nav .nom, nav .puntos { display: none; }
+	header { position: static; }
+	.contexto { margin-left: 0; }
+	.rol { grid-template-columns: 1fr; gap: 2px; }
+	.tiempo { grid-template-columns: 44px 80px minmax(0, 1fr); }
+	.tiempo .barra-celda, .tiempo .cab:nth-child(4) { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+	<div class="barra">
+		<div class="marca">StreamDB</div>
+		<div class="leyenda" aria-label="Motores">
+			<span class="motor c-mongo">MongoDB</span><span class="motor c-redis">Redis</span><span class="motor c-neo4j">Neo4j</span>
+			<span class="motor c-cassandra">Cassandra</span><span class="motor c-postgres">PostgreSQL</span>
+		</div>
+		<div class="contexto">
+			<label>Perfil <select id="perfil"></select></label>
+			<label>Dispositivo <select id="dispositivo"></select></label>
+			<label>Contenido <select id="contenido"></select></label>
+			<span class="sesion" id="sesion">sin sesión</span>
+			<button class="boton" id="reiniciar" title="Cierra las sesiones de la cuenta demo, deshace los retiros de P8 y borra las series creadas desde el panel">Reiniciar demo</button>
+		</div>
+	</div>
+</header>
+
+<div class="layout">
+	<nav id="nav" aria-label="Problemas"></nav>
+	<main>
+		<section class="tarjeta"><div class="cuerpo" id="problema"></div></section>
+		<section class="tarjeta"><div class="cuerpo"><h3>Escenarios</h3><div class="escenarios" id="escenarios"></div></div></section>
+		<section class="tarjeta"><div class="cuerpo">
+			<div class="resultados-cab">
+				<h3 style="margin:0">Resultados</h3>
+				<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+					<label><input type="checkbox" id="verLog" checked> mostrar el log de la saga</label>
+					<button class="boton" id="limpiar">Limpiar</button>
+				</div>
+			</div>
+			<div id="resultados"><p class="vacio">Ejecutá un escenario para ver qué hace cada motor.</p></div>
+		</div></section>
+	</main>
+	<aside class="tarjeta">
+		<div class="estado-cab">
+			<div><h3>Estado de los motores</h3><small id="estadoHora">—</small></div>
+			<button class="boton" id="refrescar">Actualizar</button>
+		</div>
+		<div id="estado"></div>
+	</aside>
+</div>
+<div class="aviso" id="aviso" role="status"></div>
+
+<script>
+const API = '/api/v1';
+const MOTORES = {
+	mongo: 'MongoDB', redis: 'Redis', neo4j: 'Neo4j', cassandra: 'Cassandra', postgres: 'PostgreSQL',
+};
+const ROL_CORTO = {
+	mongo: 'catálogo, cuentas, log de sagas', redis: 'sesiones, cupo, continuar viendo', neo4j: 'elenco, vínculos, señales VIO',
+	cassandra: 'historial y sesiones cerradas', postgres: 'licencias',
+};
+
+// El encabezado puede ocupar más de una línea: el panel de estado toma el alto que queda debajo
+const encabezado = document.querySelector('header');
+new ResizeObserver(() => document.documentElement.style.setProperty('--alto-header', encabezado.offsetHeight + 'px')).observe(encabezado);
+
+// Tocar una operación de la línea de tiempo la expande para ver el detalle completo
+document.addEventListener('click', (ev) => {
+	const celda = ev.target.closest('.tiempo .que');
+	if (celda && !getSelection().toString()) celda.classList.toggle('abierta');
+});
+
+// ─── Estado del panel ────────────────────────────────────────────────────────
+let D = null;                 // datos de demo (ids fijos del seed)
+const ctx = { sesiones: {} }; // por dispositivo: { id, vence, finalizada, pos }
+let actual = 'P2';
+let estadoPrevio = null;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const acortar = (s) => String(s).replace(/([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '$1…');
+const motor = (m, texto) => `<span class="motor c-${m}">${esc(texto ?? MOTORES[m])}</span>`;
+
+const sel = () => ({
+	perfil: D.perfiles.find((p) => p.id === $('#perfil').value),
+	dispositivo: $('#dispositivo').value,
+	contenido: $('#contenido').value,
+});
+const sesionActual = () => {
+	const s = ctx.sesiones[sel().dispositivo];
+	return s && s.vence > Date.now() ? s : null;
+};
+
+// ─── Pedidos reutilizables ───────────────────────────────────────────────────
+const iniciar = ({ body, ...extra } = {}) => () => {
+	const { perfil, dispositivo, contenido } = sel();
+	return {
+		metodo: 'POST', ruta: `${API}/reproducciones`, etiqueta: 'P2 · iniciar o retomar',
+		body: { idPerfil: perfil.id, idDispositivo: dispositivo, idContenido: contenido, ...body },
+		guardar: (r, s, p) => {
+			if (s === 201) ctx.sesiones[p.body.idDispositivo] = { id: r.idSesion, vence: Date.now() + r.expiraEnSeg * 1000, finalizada: false, pos: r.posicionSeg };
+		},
+		...extra,
+	};
+};
+// Prepara una sesión si no hay una vigente en el dispositivo (o si su visualización ya terminó)
+const conSesion = (pedidos, { sinFinalizar = false } = {}) => () => {
+	const s = sesionActual();
+	const falta = !s || (sinFinalizar && s.finalizada);
+	return [...(falta ? [Object.assign(iniciar()(), { preparacion: true })] : []), ...pedidos];
+};
+const progreso = (evento = 'reporte', principal = true) => () => {
+	const s = sesionActual();
+	s.pos = (s.pos ?? 0) + 15;
+	return {
+		metodo: 'POST', ruta: `${API}/reproducciones/${s.id}/progreso`, principal,
+		body: { posicionSeg: s.pos, ...(evento !== 'reporte' && { evento }) },
+		guardar: (r, st) => { if (st === 200) s.vence = Date.now() + 120000; if (st === 410) delete ctx.sesiones[sel().dispositivo]; },
+	};
+};
+const cerrarTodas = () => ({ metodo: 'POST', ruta: `${API}/cuentas/${D.cuenta.id}/cerrar-sesiones`, etiqueta: 'P6 · cerrar todas (para empezar de cero)', preparacion: true, guardar: () => { ctx.sesiones = {}; } });
+
+// ─── Los 8 problemas ─────────────────────────────────────────────────────────
+const PROBLEMAS = {
+	P1: {
+		nombre: 'Alta de serie',
+		titulo: 'Alta de una serie con temporadas y episodios',
+		resumen: 'Carga una serie completa en una sola operación. Si un paso falla, no queda nada a medias: la saga deshace lo hecho en orden inverso. La serie recién aparece en el catálogo en el último paso (publicar).',
+		motores: {
+			mongo: 'Ficha con temporadas y episodios embebidos: se lee siempre entera (P2, P4, P7) y su forma cambia entre series y películas.',
+			neo4j: 'Elenco, géneros y vínculos (secuela, mismo universo, similar): son relaciones que P5 y P7 recorren.',
+		},
+		pasos: { ficha: 'mongo', episodios: 'mongo', nodo: 'neo4j', elenco: 'neo4j', vinculos: 'neo4j', publicar: 'mongo' },
+		reales: [['docker compose stop neo4j', 'el alta falla en «nodo» y se borra el borrador que ya estaba en Mongo']],
+		escenarios: [
+			{
+				titulo: 'Dar de alta y verificar', desc: 'Una serie nueva (2 actores del seed, 2 episodios, secuela de la serie demo). Después se la busca en la exploración (P7) y en los vínculos de la serie demo (Neo4j): tiene que estar en los dos, y con una falla en ninguno.',
+				fallas: ['ficha', 'episodios', 'nodo', 'elenco', 'vinculos', 'publicar'],
+				pedidos: () => [
+					{
+						metodo: 'POST', ruta: `${API}/contenidos/series`, principal: true, etiqueta: 'P1 · alta',
+						body: {
+							// El sufijo lo hace único aunque se den dos altas en el mismo segundo (la verificación busca por título)
+							titulo: `${D.prefijoAlta}${new Date().toLocaleTimeString('es-AR')} · ${Math.random().toString(36).slice(2, 6)}`,
+							clasificacionEdad: 13, anioEstreno: 2026,
+							generos: D.serie.generos.slice(0, 2), idPlataforma: D.serie.idPlataforma,
+							elenco: D.serie.elenco.map((a, i) => ({ idActor: a.idActor, personaje: i ? 'Antagonista' : 'Protagonista' })),
+							vinculos: [{ idContenido: D.serie.id, tipo: 'secuela' }],
+							temporadas: [{ numero: 1, episodios: [{ titulo: 'Piloto', duracionSeg: 2700 }, { titulo: 'La tormenta', duracionSeg: 2580 }] }],
+						},
+					},
+					{ metodo: 'GET', ruta: `${API}/contenidos?idPlataforma=${D.serie.idPlataforma}&genero=${encodeURIComponent(D.serie.generos[0])}&limite=50`, etiqueta: 'verificación · ¿aparece en la exploración? (P7)' },
+					{ metodo: 'GET', ruta: `${API}/contenidos/${D.serie.id}/trazabilidad?limite=1`, etiqueta: 'verificación · ¿es vínculo de la serie demo? (Neo4j)' },
+				],
+				resumen: (rs) => {
+					const [alta, explorar, traza] = rs;
+					if (!traza) return null;
+					const titulo = alta.body.titulo;
+					const enCatalogo = !!explorar.cuerpo?.contenidos?.some((c) => c.titulo === titulo);
+					const enVinculos = !!traza.cuerpo?.vinculos?.vinculos?.some((v) => v.titulo === titulo);
+					if (alta.status === 201) {
+						return { ok: enCatalogo && enVinculos, texto: `Alta completa: ${enCatalogo ? 'aparece' : 'NO aparece'} en la exploración (Mongo, publicada) y ${enVinculos ? 'figura' : 'NO figura'} como vínculo de «${D.serie.titulo}» (Neo4j).` };
+					}
+					return { ok: !enCatalogo && !enVinculos, texto: `La saga se revirtió: la serie ${enCatalogo ? 'SÍ aparece (no debería)' : 'no aparece'} en la exploración y ${enVinculos ? 'SÍ figura (no debería)' : 'no figura'} en los vínculos de la serie demo. No quedó nada a medias.` };
+				},
+			},
+			{
+				titulo: 'Serie inválida', desc: 'Clasificación y géneros inválidos: se rechaza antes de empezar la saga, así que no se escribe nada en ningún motor.',
+				pedidos: () => [{ metodo: 'POST', ruta: `${API}/contenidos/series`, principal: true, body: { titulo: 'Sin datos', clasificacionEdad: 12, generos: [], idPlataforma: D.serie.idPlataforma, elenco: [], temporadas: [] } }],
+			},
+		],
+	},
+	P2: {
+		nombre: 'Inicio y límite de sesiones',
+		titulo: 'Inicio de reproducción y límite de sesiones simultáneas',
+		resumen: 'Un perfil empieza a ver algo en un dispositivo. Hay que respetar el límite de sesiones de la cuenta aun con pedidos al mismo tiempo, y registrar la visualización. Si el dispositivo ya tiene una sesión activa, se reutiliza (no ocupa otro lugar).',
+		motores: {
+			mongo: 'Solo lectura: perfil, límite de la cuenta y que el contenido esté publicado y sea apto.',
+			redis: 'Cupo de sesiones: un script Lua verifica y reserva en una sola operación atómica, sin carreras. La sesión vive con TTL.',
+			cassandra: 'Historial de visualizaciones: escritura masiva, solo se agrega y se consulta por perfil y mes.',
+		},
+		pasos: { reservar_cupo: 'redis', registrar_inicio: 'cassandra' },
+		reales: [['docker compose stop cassandra', 'falla «registrar_inicio» y se libera el lugar que se había reservado en Redis']],
+		escenarios: [
+			{
+				titulo: 'Iniciar o retomar', desc: 'Con el perfil, dispositivo y contenido elegidos arriba. Retoma en el episodio y segundo de «continuar viendo».',
+				fallas: ['reservar_cupo', 'registrar_inicio'],
+				pedidos: () => [Object.assign(iniciar()(), { principal: true })],
+			},
+			{
+				titulo: 'Superar el límite de sesiones', desc: `La cuenta demo admite ${'{lim}'} sesiones. Se cierran todas, se inicia en los dispositivos 1 y 2, y el 3 queda afuera (409).`,
+				pedidos: () => [cerrarTodas(), ...D.dispositivos.map((d, i) => iniciar({
+					etiqueta: `P2 · dispositivo ${i + 1}`, principal: i === 2,
+					body: { idDispositivo: d },
+				})())],
+			},
+			{
+				titulo: 'Dos dispositivos por el último lugar', desc: 'Queda un solo lugar libre y los dispositivos 2 y 3 lo piden al mismo tiempo. El Lua lee y reserva en una sola operación: gana uno solo.',
+				pedidos: () => [
+					cerrarTodas(),
+					...D.dispositivos.slice(0, D.cuenta.limiteSesiones - 1).map((d) => iniciar({ etiqueta: 'P2 · ocupa un lugar', preparacion: true, body: { idDispositivo: d } })()),
+					{ paralelo: D.dispositivos.slice(D.cuenta.limiteSesiones - 1).map((d, i) => iniciar({ etiqueta: `en paralelo · dispositivo ${D.cuenta.limiteSesiones + i}`, principal: true, body: { idDispositivo: d } })) },
+				],
+				resumen: (rs) => {
+					const carrera = rs.filter((r) => r.etiqueta?.startsWith('en paralelo'));
+					const ganaron = carrera.filter((r) => r.status === 201).length;
+					return { ok: ganaron === 1, texto: `${carrera.length} pedidos simultáneos por el último lugar: ${ganaron === 1 ? 'ganó uno solo' : `ganaron ${ganaron}`} y ${carrera.length - ganaron === 1 ? 'el otro recibió' : `${carrera.length - ganaron} recibieron`} 409. El cupo nunca superó el límite.` };
+				},
+			},
+			{
+				titulo: 'Mismo dispositivo dos veces', desc: 'El segundo pedido reutiliza la sesión del dispositivo: el cupo no cambia (sesionReutilizada: true).',
+				pedidos: () => [iniciar({ etiqueta: 'P2 · primera vez' })(), iniciar({ etiqueta: 'P2 · otra vez', principal: true })()],
+			},
+			{
+				titulo: 'Perfil no apto', desc: 'El perfil Niños (+7) intenta ver la serie demo (+16): se rechaza con 403 sin tocar Redis ni Cassandra.',
+				pedidos: () => [iniciar({ principal: true, body: { idPerfil: D.perfiles.find((p) => p.clasificacionEdad < 13).id, idContenido: D.serie.id } })()],
+			},
+		],
+	},
+	P3: {
+		nombre: 'Progreso',
+		titulo: 'Progreso, continuar viendo e historial',
+		resumen: 'El reproductor informa el segundo actual cada pocos segundos. Va a memoria en cada reporte y a disco cada 6 reportes o al pausar, para no escribir en Cassandra con cada reporte.',
+		motores: {
+			redis: 'Cada reporte: posición exacta (cv), índice de «continuar viendo» y renovación de la sesión (heartbeat), en un Lua atómico.',
+			cassandra: 'Checkpoint de la visualización cada 6 reportes o al pausar. Si Redis se pierde, «continuar viendo» se reconstruye desde acá.',
+			mongo: 'Solo lectura: las fichas para mostrar «continuar viendo».',
+		},
+		reales: [['docker compose stop cassandra', 'el reporte responde checkpoint: «fallido», pero el progreso sigue en Redis y el próximo checkpoint lo corrige']],
+		escenarios: [
+			{ titulo: 'Reportar progreso', desc: 'Avanza 15 segundos. Solo escribe en Redis (salvo que toque checkpoint).', pedidos: conSesion([progreso()], { sinFinalizar: true }) },
+			{ titulo: 'Pausar', desc: 'El evento «pausa» fuerza el checkpoint a Cassandra.', pedidos: conSesion([progreso('pausa')], { sinFinalizar: true }) },
+			{
+				titulo: 'Reportar hasta el checkpoint', desc: 'Reporta seguido hasta que toca guardar en Cassandra (cada 6 reportes): los anteriores van solo a Redis.',
+				pedidos: conSesion([Object.assign(progreso('reporte', false), { repetirHasta: (c) => c.checkpoint !== 'no_corresponde', maximo: 6 })], { sinFinalizar: true }),
+			},
+			{ titulo: 'Continuar viendo', desc: 'Lo que el perfil dejó a medias, desde Redis.', pedidos: () => [{ metodo: 'GET', ruta: `${API}/perfiles/${sel().perfil.id}/continuar-viendo`, principal: true }] },
+			{ titulo: 'Historial', desc: 'Visualizaciones del perfil en los últimos 12 meses, desde Cassandra (partición por perfil y mes).', pedidos: () => [{ metodo: 'GET', ruta: `${API}/perfiles/${sel().perfil.id}/historial?limite=5`, principal: true }] },
+		],
+	},
+	P4: {
+		nombre: 'Fin de episodio',
+		titulo: 'Fin de episodio',
+		resumen: 'Termina un episodio: se marca finalizado en el historial, «continuar viendo» pasa al episodio siguiente y se registra la señal VIO para las recomendaciones. Si un paso falla, todo vuelve a como estaba.',
+		motores: {
+			mongo: 'Solo lectura: duración y cuál es el episodio siguiente.',
+			cassandra: 'Marca finalizada la fila de la visualización (guarda antes los valores previos).',
+			redis: 'Mueve «continuar viendo» al episodio siguiente, en el segundo 0.',
+			neo4j: 'Relación VIO perfil → contenido. Va última porque es la que alimenta las recomendaciones (P5).',
+		},
+		pasos: { marcar_finalizado: 'cassandra', continuar_viendo: 'redis', senal_vio: 'neo4j' },
+		reales: [['docker compose stop neo4j', 'falla «senal_vio» y se restauran Redis y Cassandra']],
+		escenarios: [
+			{
+				titulo: 'Terminar el episodio', desc: 'Si hace falta, primero inicia o retoma la reproducción (P2).',
+				fallas: ['marcar_finalizado', 'continuar_viendo', 'senal_vio'],
+				pedidos: conSesion([() => ({
+					metodo: 'POST', ruta: `${API}/reproducciones/${sesionActual().id}/fin`, principal: true,
+					guardar: (r, s) => { if (s === 200) sesionActual().finalizada = true; },
+				})], { sinFinalizar: true }),
+			},
+			{
+				titulo: 'Terminar y reintentar', desc: 'Se manda el mismo fin dos veces (como un reintento de red): el segundo no duplica nada y responde yaRegistrado.',
+				pedidos: conSesion([1, 2].map((n) => () => ({
+					metodo: 'POST', ruta: `${API}/reproducciones/${sesionActual().id}/fin`, principal: n === 2,
+					etiqueta: n === 1 ? 'P4 · fin' : 'P4 · el mismo fin, otra vez',
+					guardar: (r, s) => { if (s === 200) sesionActual().finalizada = true; },
+				})), { sinFinalizar: true }),
+			},
+		],
+	},
+	P5: {
+		nombre: 'Recomendaciones',
+		titulo: 'Recomendaciones con su motivo',
+		resumen: '10 recomendaciones aptas para el perfil, cada una con el «porque viste X» que la justifica.',
+		motores: {
+			neo4j: 'Recorre secuelas, mismo universo, similares, elenco y género desde lo que vio el perfil, con pesos y recencia.',
+			redis: 'Lo que está viendo ahora cuenta como consumo reciente y no se recomienda.',
+			mongo: 'Revalida cada ficha (publicada y apta): es la fuente de verdad del catálogo.',
+		},
+		escenarios: [
+			{ titulo: 'Recomendaciones del perfil', desc: 'Para el perfil elegido arriba.', pedidos: () => [{ metodo: 'GET', ruta: `${API}/perfiles/${sel().perfil.id}/recomendaciones`, principal: true }] },
+			{
+				titulo: 'Perfil Niños', desc: 'Mismo recorrido, pero solo lo apto para +7.',
+				pedidos: () => [{ metodo: 'GET', ruta: `${API}/perfiles/${D.perfiles.find((p) => p.clasificacionEdad < 13).id}/recomendaciones`, principal: true }],
+			},
+		],
+	},
+	P6: {
+		nombre: 'Expiración y cierre',
+		titulo: 'Expiración y cierre de sesiones',
+		resumen: 'Una sesión sin reportes por 2 minutos expira sola y libera su lugar. El titular también puede cerrar todas las sesiones de la cuenta de forma remota.',
+		motores: {
+			redis: 'TTL de la sesión, aviso de expiración (keyspace notifications) y un Lua que cierra y libera el cupo en una sola operación.',
+			cassandra: 'Registro de cada sesión cerrada (sesiones_por_cuenta) y el último segundo visto.',
+		},
+		reales: [['docker compose stop cassandra', 'el cierre en Redis se hace igual; el registro queda en «cierres_pendientes» y el barrido lo reintenta']],
+		escenarios: [
+			{
+				titulo: 'Forzar la expiración', desc: 'Simula 2 minutos sin reportes: la vida de la sesión vence ya y el listener de Redis la cierra (aparece como proceso de fondo).',
+				pedidos: conSesion([() => ({
+					metodo: 'POST', ruta: `/demo/api/expirar/${sesionActual().id}`, principal: true,
+					guardar: (r, s) => { if (s === 200) delete ctx.sesiones[sel().dispositivo]; },
+				})]),
+			},
+			{
+				titulo: 'Cerrar esta sesión', desc: 'El dispositivo cierra su sesión y libera su lugar.',
+				pedidos: conSesion([() => ({
+					metodo: 'DELETE', ruta: `${API}/reproducciones/${sesionActual().id}`, principal: true,
+					guardar: () => { delete ctx.sesiones[sel().dispositivo]; },
+				})]),
+			},
+			{
+				titulo: 'Cierre remoto de la cuenta', desc: 'El titular cierra todas las sesiones: el cupo queda vacío en la misma operación.',
+				pedidos: () => [{ metodo: 'POST', ruta: `${API}/cuentas/${D.cuenta.id}/cerrar-sesiones`, principal: true, guardar: () => { ctx.sesiones = {}; } }],
+			},
+			{ titulo: 'Sesiones de la cuenta', desc: 'Activas (Redis) e historial de cerradas con su motivo (Cassandra).', pedidos: () => [{ metodo: 'GET', ruta: `${API}/cuentas/${D.cuenta.id}/sesiones?limite=5`, principal: true }] },
+		],
+	},
+	P7: {
+		nombre: 'Exploración',
+		titulo: 'Exploración del catálogo',
+		resumen: 'Filtros combinados por género, actor y plataforma. Con perfil, solo lo apto para su edad y con su progreso en cada contenido, más los contenidos vinculados.',
+		motores: {
+			mongo: 'Filtros combinados, paginado y cantidad de episodios en una sola consulta (índices sobre el catálogo).',
+			neo4j: 'Contenidos vinculados de cada resultado, en paralelo con Redis.',
+			redis: 'Con perfil: el episodio y segundo exactos donde quedó en cada resultado.',
+		},
+		escenarios: [
+			{ titulo: 'Por género, con perfil', desc: () => `Género «${D.serie.generos[0]}» para el perfil elegido: trae su progreso.`, pedidos: () => [{ metodo: 'GET', ruta: `${API}/contenidos?genero=${encodeURIComponent(D.serie.generos[0])}&idPerfil=${sel().perfil.id}&limite=5`, principal: true }] },
+			{ titulo: 'Por actor', desc: () => `Lo que hizo ${D.serie.elenco[0].nombre}.`, pedidos: () => [{ metodo: 'GET', ruta: `${API}/contenidos?idActor=${D.serie.elenco[0].idActor}&idPerfil=${sel().perfil.id}&limite=5`, principal: true }] },
+			{ titulo: 'Plataforma + género, sin perfil', desc: () => `${D.serie.plataforma} y «${D.serie.generos[0]}». Sin perfil no se consulta Redis.`, pedidos: () => [{ metodo: 'GET', ruta: `${API}/contenidos?idPlataforma=${D.serie.idPlataforma}&genero=${encodeURIComponent(D.serie.generos[0])}&limite=5`, principal: true }] },
+		],
+	},
+	P8: {
+		nombre: 'Retiro y trazabilidad',
+		titulo: 'Retiro por fin de licencia y trazabilidad',
+		resumen: 'Cuando vencen todas las licencias de un contenido, desaparece de «continuar viendo», de las recomendaciones y del catálogo, pero su historial se conserva. La trazabilidad junta lo que hay de un contenido en los cinco motores.',
+		motores: {
+			postgres: 'Licencias: la base impide dos licencias superpuestas en la misma región (EXCLUDE con rangos de fechas).',
+			redis: 'Saca el contenido de «continuar viendo» de cada perfil y lo marca retirado.',
+			neo4j: 'Marca el nodo retirado: sale de recomendaciones y vínculos.',
+			mongo: 'Ficha retirada: sale del catálogo.',
+			cassandra: 'No se toca: el historial se conserva (se lee en la trazabilidad).',
+		},
+		pasos: { continuar_viendo: 'redis', marcar_nodo: 'neo4j', retirar_ficha: 'mongo', vencer_licencias: 'postgres' },
+		reales: [['docker compose stop postgres', 'falla «vencer_licencias», se revierte todo y la licencia sigue vigente para el próximo proceso']],
+		escenarios: [
+			{
+				titulo: 'Retirar un contenido vencido', desc: () => `«${D.vencido?.titulo}»: todas sus licencias terminaron. «Reiniciar demo» lo vuelve a publicar.`,
+				fallas: ['continuar_viendo', 'marcar_nodo', 'retirar_ficha', 'vencer_licencias'],
+				pedidos: () => [
+					// Si ya se retiró antes, se vuelve a publicar para poder repetirlo (o probar otra falla)
+					{ metodo: 'POST', ruta: `/demo/api/republicar/${D.vencido.id}`, etiqueta: 'preparación · volver a publicarlo si estaba retirado', preparacion: true },
+					{ metodo: 'POST', ruta: `${API}/contenidos/${D.vencido.id}/retiro`, principal: true },
+				],
+			},
+			{
+				titulo: 'Retirar algo que se está viendo', desc: () => `El Titular empieza «${D.vencido?.titulo}» y reporta progreso. Después se retira y se comprueba que desaparece de «continuar viendo», de la exploración y del grafo, y que el historial se conserva.`,
+				fallas: ['continuar_viendo', 'marcar_nodo', 'retirar_ficha', 'vencer_licencias'],
+				pedidos: () => {
+					const titular = D.perfiles.reduce((a, b) => (b.clasificacionEdad > a.clasificacionEdad ? b : a));
+					return [
+						cerrarTodas(),
+						{ metodo: 'POST', ruta: `/demo/api/republicar/${D.vencido.id}`, etiqueta: 'preparación · volver a publicarlo si estaba retirado', preparacion: true },
+						iniciar({ etiqueta: 'P2 · el Titular empieza a verlo', preparacion: true, body: { idPerfil: titular.id, idContenido: D.vencido.id } }),
+						() => ({ ...progreso('reporte', false)(), etiqueta: 'P3 · reporta progreso', preparacion: true }),
+						{ metodo: 'POST', ruta: `${API}/contenidos/${D.vencido.id}/retiro`, principal: true, etiqueta: 'P8 · retiro' },
+						() => ({ ...progreso('reporte', false)(), etiqueta: 'verificación · ¿P3 acepta más progreso?' }),
+						{ metodo: 'GET', ruta: `${API}/perfiles/${titular.id}/continuar-viendo?limite=50`, etiqueta: 'verificación · ¿sigue en continuar viendo?' },
+						{ metodo: 'GET', ruta: `${API}/contenidos?idPlataforma=${D.vencido.idPlataforma}&genero=${encodeURIComponent(D.vencido.genero)}&limite=50`, etiqueta: 'verificación · ¿aparece en la exploración? (P7)' },
+						{ metodo: 'GET', ruta: `${API}/contenidos/${D.vencido.id}/trazabilidad?limite=1`, etiqueta: 'verificación · estado en cada motor e historial' },
+					];
+				},
+				resumen: (rs) => {
+					const por = (e) => rs.find((r) => r.etiqueta?.startsWith(e));
+					const retiro = por('P8 · retiro');
+					const p3 = por('verificación · ¿P3');
+					const tz = por('verificación · estado')?.cuerpo;
+					if (!retiro || !tz) return null;
+					const enCv = !!por('verificación · ¿sigue')?.cuerpo?.contenidos?.some((c) => c.idContenido === D.vencido.id);
+					const enP7 = !!por('verificación · ¿aparece')?.cuerpo?.contenidos?.some((c) => c._id === D.vencido.id);
+					const ficha = tz.ficha?.estado, nodo = tz.vinculos?.estado, historial = tz.historial?.total;
+					const licencias = [...new Set(tz.licencias?.licencias?.map((l) => l.estado) ?? [])].join(' y ');
+					const retirado = retiro.status === 200;
+					const ok = retirado
+						? p3?.status === 410 && !enCv && !enP7 && ficha === 'retirado' && nodo === 'retirado' && historial > 0
+						: p3?.status === 200 && enCv && enP7 && ficha === 'publicado' && nodo === 'publicado';
+					const items = [
+						`P3 ${p3?.status === 410 ? 'rechaza el progreso (410)' : `acepta el progreso (${p3?.status})`}`,
+						`«continuar viendo»: ${enCv ? 'sigue' : 'ya no está'}`,
+						`exploración: ${enP7 ? 'aparece' : 'no aparece'}`,
+						`Mongo: ${ficha}`, `Neo4j: ${nodo}`, `licencias: ${licencias}`,
+						`historial en Cassandra: ${historial} visualizaciones`,
+					];
+					return { ok, texto: `${retirado ? 'Retirado' : 'El retiro se revirtió entero'}. ${items.join(' · ')}.` };
+				},
+			},
+			{
+				titulo: 'Retirar la serie demo', desc: 'Tiene una licencia vigente: PostgreSQL lo impide (409) y no empieza la saga.',
+				pedidos: () => [{ metodo: 'POST', ruta: `${API}/contenidos/${D.serie.id}/retiro`, principal: true }],
+			},
+			{
+				titulo: 'Trazabilidad de la serie demo', desc: 'Una consulta a los cinco motores en paralelo, con el mismo id. Antes se inicia una reproducción, para que «lo ven ahora» no dé 0.',
+				pedidos: () => [
+					iniciar({ etiqueta: 'P2 · alguien lo está viendo', preparacion: true, body: { idPerfil: D.perfiles.reduce((a, b) => (b.clasificacionEdad > a.clasificacionEdad ? b : a)).id, idContenido: D.serie.id } }),
+					{ metodo: 'GET', ruta: `${API}/contenidos/${D.serie.id}/trazabilidad?limite=3`, principal: true },
+				],
+			},
+			{ titulo: 'Trazabilidad del vencido', desc: 'Después del retiro: retirado en Mongo y Neo4j, licencias vencidas, historial intacto.', pedidos: () => [{ metodo: 'GET', ruta: `${API}/contenidos/${D.vencido.id}/trazabilidad?limite=3`, principal: true }] },
+			{ titulo: 'Procesar los vencimientos de hoy', desc: 'Corre el proceso diario: retira todo lo que se quedó sin licencias (varias sagas). «Reiniciar demo» los restaura.', pedidos: () => [{ metodo: 'POST', ruta: `${API}/licencias/procesar-vencimientos`, principal: true }] },
+		],
+	},
+};
+
+// ─── Ejecución ───────────────────────────────────────────────────────────────
+async function pedir(p, fallarEn) {
+	let ruta = p.ruta;
+	if (fallarEn && p.principal) ruta += (ruta.includes('?') ? '&' : '?') + 'fallarEn=' + fallarEn;
+	const inicio = performance.now();
+	const r = await fetch(ruta, {
+		method: p.metodo, headers: { 'content-type': 'application/json', 'x-traza': '1' },
+		body: p.body ? JSON.stringify(p.body) : undefined,
+	});
+	const ms = Math.round(performance.now() - inicio);
+	const cuerpo = await r.json().catch(() => null);
+	p.guardar?.(cuerpo ?? {}, r.status, p);
+	const id = r.headers.get('x-traza');
+	const traza = id ? await fetch(`/demo/api/trazas/${id}`).then((x) => x.json()).catch(() => null) : null;
+	return { ...p, ruta, status: r.status, ms, cuerpo, traza };
+}
+
+async function ejecutar(clave, i, fallarEn, boton) {
+	const escenario = PROBLEMAS[clave].escenarios[i];
+	document.querySelectorAll('.escenario button').forEach((b) => (b.disabled = true));
+	const resultados = [];
+	const antes = await leerEstado().catch(() => null); // para mostrar qué cambió en cada motor
+	try {
+		// Los pedidos se arman de a uno: cada uno puede depender de lo que guardó el anterior (ej. idSesion)
+		for (const item of escenario.pedidos()) {
+			// Pedidos simultáneos (ej. la carrera por el último lugar de P2)
+			if (item.paralelo) {
+				resultados.push(...await Promise.all(item.paralelo.map((f) => pedir(f(), fallarEn))));
+				continue;
+			}
+			let p = typeof item === 'function' ? item() : item;
+			let r = await pedir(p, fallarEn);
+			resultados.push(r);
+			// Un pedido que se repite hasta que se cumple una condición (ej. llegar al checkpoint de P3)
+			for (let n = 1; item.repetirHasta && r.status < 400 && !item.repetirHasta(r.cuerpo) && n < item.maximo; n++) {
+				p = item();
+				r = await pedir(p, fallarEn);
+				resultados.push(r);
+			}
+			if (p.preparacion && r.status >= 400) {
+				aviso(`No se pudo preparar el escenario: ${r.cuerpo?.error ?? r.status}`);
+				break;
+			}
+		}
+	} catch (e) {
+		aviso(e.message);
+	} finally {
+		document.querySelectorAll('.escenario button').forEach((b) => (b.disabled = false));
+	}
+	const despues = await leerEstado().catch(() => null);
+	if (resultados.length) {
+		mostrarEjecucion({
+			clave, titulo: escenario.titulo, fallarEn, resultados, resumen: escenario.resumen?.(resultados),
+			cambios: antes && despues ? diferencias(antes, despues) : null, fecha: new Date().toLocaleString('es-AR'),
+		});
+	}
+	actualizarSesion();
+	if (despues) pintarEstado(despues); else await refrescarEstado();
+}
+
+// Qué cambió en los datos de demo entre antes y después de la ejecución, motor por motor
+function diferencias(antes, despues) {
+	const cambios = [];
+	for (const [m, filas] of Object.entries(despues.motores)) {
+		const previas = new Map((antes.motores[m] ?? []).map((f) => [f.clave, f]));
+		for (const f of filas) {
+			const a = previas.get(f.clave);
+			previas.delete(f.clave);
+			if (!a) cambios.push({ motor: m, clave: f.clave, antes: '—', despues: f.valor, log: f.log });
+			else if (sinContador(a.valor) !== sinContador(f.valor)) cambios.push({ motor: m, clave: f.clave, antes: a.valor, despues: f.valor, log: f.log });
+		}
+		// Lo que ya no está (salvo filas de una ventana, como "las 3 más recientes", que salen porque entró otra)
+		for (const a of previas.values()) if (!a.ventana) cambios.push({ motor: m, clave: a.clave, antes: a.valor, despues: '(ya no está)', log: a.log });
+	}
+	return cambios;
+}
+
+function htmlCambios(cambios, conPreparacion) {
+	if (!cambios) return '';
+	const datos = cambios.filter((c) => !c.log);
+	const filas = cambios.map((c) => `<tr class="${c.log ? 'log' : ''}"><td>${motor(c.log ? 'log' : c.motor, c.log ? 'log saga' : MOTORES[c.motor])}</td>
+		<td class="k">${esc(c.clave)}</td><td class="antes">${esc(c.antes)}</td><td>${esc(c.despues)}</td></tr>`).join('');
+	const nota = datos.length ? '' : `<p class="relato">Ningún dato de la demo cambió en los cinco motores: quedaron exactamente como antes${cambios.length ? ' (solo se agregó el registro de la saga en Mongo)' : ''}.</p>`;
+	const aclaracion = conPreparacion && datos.length ? '<p class="ms" style="margin:0 0 8px">Incluye lo que hicieron los pedidos de preparación (por ejemplo, iniciar una sesión).</p>' : '';
+	return `<div class="cambios"><h4>Cambios en los motores · antes → después</h4>${nota}${aclaracion}
+		${cambios.length ? `<table class="tabla-cambios"><thead><tr><th>Motor</th><th>Dato</th><th>Antes</th><th>Después</th></tr></thead><tbody>${filas}</tbody></table>` : ''}</div>`;
+}
+
+// ─── Copiar una ejecución como Markdown (evidencia para el informe) ──────────
+const celda = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+const recortarJson = (v, max = 40) => {
+	const lineas = JSON.stringify(v, null, 2).split('\n');
+	return lineas.length > max ? [...lineas.slice(0, max), `… (${lineas.length - max} líneas más)`].join('\n') : lineas.join('\n');
+};
+
+function markdown(e) {
+	const L = [`### ${e.clave} · ${e.titulo}${e.fallarEn ? ` — falla provocada en \`${e.fallarEn}\`` : ''}`, '', `Ejecutado el ${e.fecha} desde el panel de demo.`, ''];
+	if (e.resumen) L.push(`> ${e.resumen.texto}`, '');
+	for (const r of e.resultados) {
+		L.push(`#### ${r.etiqueta ? `${r.etiqueta} · ` : ''}\`${r.metodo} ${r.ruta}\` → ${r.status} (${r.traza?.ms ?? r.ms} ms)`, '');
+		const rel = relato(PROBLEMAS[e.clave], r);
+		if (rel) L.push(rel.texto, '');
+		const saga = r.traza?.saga;
+		if (saga) L.push(`Saga \`${saga.tipo}\` → **${saga.estado}**: ${saga.pasos.map((p) => `${p.nombre} (${p.estado})`).join(' → ')}`, '');
+		const ops = r.traza?.ops ?? [];
+		if (ops.length) {
+			L.push('| ms | Motor | Operación | Detalle | Duración |', '| ---: | --- | --- | --- | ---: |');
+			for (const o of ops) {
+				L.push(`| ${o.desde} | ${o.log ? 'log saga' : MOTORES[o.motor]}${o.fondo ? ' (fondo)' : ''} | ${o.op} | ${celda(acortar(o.detalle.split('\n')[0])).slice(0, 160)} | ${o.ms ?? '…'} ms${o.error ? ` ✕ ${celda(o.error)}` : ''} |`);
+			}
+			L.push('');
+		}
+		if (r.body) L.push('Pedido:', '', '```json', recortarJson(r.body), '```', '');
+		L.push('Respuesta:', '', '```json', recortarJson(r.cuerpo), '```', '');
+	}
+	if (e.cambios) {
+		const datos = e.cambios.filter((c) => !c.log);
+		L.push('#### Cambios en los motores (antes → después)', '');
+		if (!datos.length) L.push('Ningún dato de la demo cambió en los cinco motores: quedaron exactamente como antes.', '');
+		if (e.cambios.length) {
+			L.push('| Motor | Dato | Antes | Después |', '| --- | --- | --- | --- |');
+			for (const c of e.cambios) L.push(`| ${c.log ? 'log saga' : MOTORES[c.motor]} | ${celda(c.clave)} | ${celda(c.antes)} | ${celda(c.despues)} |`);
+			L.push('');
+		}
+	}
+	return L.join('\n');
+}
+
+async function copiar(texto) {
+	try {
+		await navigator.clipboard.writeText(texto);
+	} catch {
+		const t = document.createElement('textarea'); // sin permiso de portapapeles: el método viejo
+		t.value = texto;
+		document.body.appendChild(t);
+		t.select();
+		document.execCommand('copy');
+		t.remove();
+	}
+	aviso('Copiado como Markdown: listo para pegar en el informe.');
+}
+
+// ─── Render: resultados ──────────────────────────────────────────────────────
+function relato(problema, r) {
+	const saga = r.traza?.saga;
+	const c = r.cuerpo ?? {};
+	if (r.traza?.cantidadSagas > 1) {
+		return { ok: true, texto: `Se ejecutaron ${r.traza.cantidadSagas} sagas, una por contenido. Abajo, el estado de la primera; en la línea de tiempo, todas.` };
+	}
+	if (saga?.estado === 'completada' && c.sesionReutilizada) {
+		return { ok: true, texto: 'Saga completada. El dispositivo ya tenía una sesión activa: se reutilizó y el cupo no cambió.' };
+	}
+	if (saga) {
+		const fallido = saga.pasos.find((p) => p.estado === 'fallido');
+		const compensados = saga.pasos.filter((p) => p.estado === 'compensado').map((p) => `«${p.nombre}»`).reverse();
+		if (saga.estado === 'completada') return { ok: true, texto: `Saga completada: ${saga.pasos.length} pasos, en orden, cada uno en su motor.` };
+		if (saga.estado === 'compensada') {
+			const motivo = r.status < 500 && r.cuerpo?.error ? `${r.cuerpo.error}. ` : '';
+			return { ok: false, texto: `${motivo}Falló «${fallido?.nombre}». ${compensados.length ? `Se compensaron ${compensados.join(' y ')}, en orden inverso, y` : 'No había pasos previos que deshacer:'} los motores quedaron como antes.` };
+		}
+		return { ok: false, texto: `La saga quedó «${saga.estado}»: revisar el log en Mongo (colección sagas).` };
+	}
+	if (r.status >= 400) {
+		const escrituras = (r.traza?.ops ?? []).filter((o) => /INSERT|UPDATE|DELETE|BATCH|EVAL|MULTI|MERGE|CREATE|insert|update|delete/i.test(o.op) && !o.log).length;
+		return { ok: false, texto: `${r.cuerpo?.error ?? 'Error'}${escrituras ? '' : ' · No se escribió nada en ningún motor.'}` };
+	}
+	if (c.checkpoint === 'guardado') return { ok: true, texto: `Reporte n.º ${c.reporte}: se guardó en Redis y, como tocaba checkpoint, también en Cassandra.` };
+	if (c.checkpoint === 'fallido') return { ok: false, texto: `Reporte n.º ${c.reporte}: Redis lo guardó, pero el checkpoint en Cassandra falló. El próximo lo corrige.` };
+	if (c.checkpoint === 'no_corresponde') return { ok: true, texto: `Reporte n.º ${c.reporte}: solo Redis. El próximo checkpoint en Cassandra es en el reporte ${Math.ceil(c.reporte / 6) * 6 || 6}.` };
+	if (c.yaRegistrado) return { ok: true, texto: 'Ya estaba registrado: no se repitió ninguna escritura (idempotencia).' };
+	if (c.yaRetirado) return { ok: true, texto: 'Ya estaba retirado: no se repitió nada.' };
+	if (c.cerradaPor) return { ok: true, texto: `La cerró el ${c.cerradaPor} a los ${c.esperaMs} ms (filas FONDO): liberó el cupo en Redis y registró el cierre en Cassandra.` };
+	return null;
+}
+
+function usoMotores(ops) {
+	const n = {};
+	for (const o of ops) if (!o.log) n[o.motor] = (n[o.motor] ?? 0) + 1;
+	return Object.entries(n).map(([m, k]) => motor(m, `${MOTORES[m]} ×${k}`)).join('');
+}
+
+function htmlSaga(problema, saga) {
+	if (!saga) return '';
+	const pasos = saga.pasos.map((p) => {
+		const m = problema.pasos?.[p.nombre] ?? 'log';
+		const marca = { hecho: '✓ hecho', fallido: '✕ falló', compensado: '↺ compensado', pendiente: '· sin ejecutar' }[p.estado] ?? p.estado;
+		return `<span class="paso ${p.estado} c-${m}" title="${esc(MOTORES[m] ?? '')}${p.error ? ' · ' + esc(p.error) : ''}"><b>${esc(p.nombre)}</b><small>${marca}</small></span>`;
+	}).join('<span class="flecha">→</span>');
+	return `<div class="saga"><span class="nombre">Saga ${esc(saga.tipo)} · <b>${esc(saga.estado)}</b></span>${pasos}</div>`;
+}
+
+function htmlTiempo(traza) {
+	if (!traza?.ops.length) return '<p class="vacio">Ninguna consulta a los motores.</p>';
+	const verLog = $('#verLog').checked;
+	const ops = traza.ops.filter((o) => verLog || !o.log);
+	const total = Math.max(traza.ms ?? 1, ...ops.map((o) => o.desde + (o.ms ?? 0)), 1);
+	const filas = ops.map((o) => {
+		const m = o.log ? 'log' : o.motor;
+		const izq = (o.desde / total) * 100;
+		const ancho = Math.max(((o.ms ?? 0) / total) * 100, 0.6);
+		return `<div class="t">${o.desde}</div>
+			<div>${motor(m, o.log ? 'log saga' : MOTORES[o.motor])}</div>
+			<div class="que ${o.log ? 'esLog' : ''}" title="Tocá para ver la operación entera">${o.fondo ? '<span class="fondo-tag">FONDO</span>' : ''}<span class="op">${esc(o.op)}</span><code class="corta">${esc(acortar(o.detalle))}</code><code class="entera">${esc(o.detalle)}</code>${o.error ? `<span class="err">✕ ${esc(o.error)}</span>` : ''}</div>
+			<div class="barra-celda"><div class="pista c-${m}"><span style="left:${izq}%;width:${ancho}%"></span></div><span class="dur">${o.ms ?? '…'} ms</span></div>`;
+	}).join('');
+	return `<div class="tiempo"><div class="cab">ms</div><div class="cab">motor</div><div class="cab">operación</div><div class="cab">duración</div>${filas}</div>`;
+}
+
+function mostrarEjecucion(ejecucion) {
+	const { clave, titulo, fallarEn, resultados, resumen, cambios } = ejecucion;
+	const problema = PROBLEMAS[clave];
+	const caja = $('#resultados');
+	if (caja.querySelector('.vacio')) caja.innerHTML = '';
+	const div = document.createElement('div');
+	div.className = 'ejecucion';
+	div.dataset.resultados = '';
+	div._datos = ejecucion;
+	div.innerHTML = `<div class="titulo"><span class="etiqueta">${clave}</span><strong>${esc(titulo)}</strong>${fallarEn ? `<span class="etiqueta falla">falla provocada en «${esc(fallarEn)}»</span>` : ''}<span class="ms">${new Date().toLocaleTimeString('es-AR')}</span>`
+		+ `<button class="boton copiar" title="Pedidos, saga, traza y cambios en Markdown, para el informe">Copiar como Markdown</button></div>`
+		+ (resumen ? `<p class="relato ${resumen.ok ? '' : 'mal'}">${esc(resumen.texto)}</p>` : '');
+	resultados.forEach((r, k) => {
+		const ultimo = r.principal || k === resultados.length - 1;
+		const rel = relato(problema, r);
+		const d = document.createElement('details');
+		d.className = 'pedido';
+		d.open = ultimo;
+		d.innerHTML = `<summary>
+				${r.etiqueta ? `<span class="etiqueta">${esc(r.etiqueta)}</span>` : ''}
+				<span class="estado e${String(r.status)[0]}">${r.status}</span>
+				<span class="linea">${esc(r.metodo)} ${esc(acortar(r.ruta))}</span>
+				<span class="ms">${r.traza?.ms ?? r.ms} ms</span>
+				<span class="uso">${usoMotores(r.traza?.ops ?? [])}</span>
+			</summary>
+			<div class="detalle-pedido">
+				${rel ? `<p class="relato ${rel.ok ? '' : 'mal'}">${esc(rel.texto)}</p>` : ''}
+				${htmlSaga(problema, r.traza?.saga)}
+				<div class="linea-tiempo">${htmlTiempo(r.traza)}</div>
+				${r.body ? `<details class="respuesta"><summary>Pedido</summary><pre>${esc(JSON.stringify(r.body, null, 2))}</pre></details>` : ''}
+				<details class="respuesta" ${ultimo ? 'open' : ''}><summary>Respuesta</summary><pre>${esc(JSON.stringify(r.cuerpo, null, 2))}</pre></details>
+			</div>`;
+		div.appendChild(d);
+	});
+	div.insertAdjacentHTML('beforeend', htmlCambios(cambios, resultados.some((r) => r.preparacion)));
+	div.querySelector('.copiar').addEventListener('click', () => copiar(markdown(ejecucion)));
+	caja.prepend(div);
+	while (caja.children.length > 12) caja.lastElementChild.remove();
+}
+
+$('#verLog').addEventListener('change', () => {
+	document.querySelectorAll('[data-resultados]').forEach((div) => {
+		div.querySelectorAll('.linea-tiempo').forEach((lt, k) => { lt.innerHTML = htmlTiempo(div._datos.resultados[k].traza); });
+	});
+});
+$('#limpiar').addEventListener('click', () => { $('#resultados').innerHTML = '<p class="vacio">Ejecutá un escenario para ver qué hace cada motor.</p>'; });
+
+// ─── Render: problema y escenarios ───────────────────────────────────────────
+const texto = (v) => (typeof v === 'function' ? v() : v);
+
+function mostrarProblema(clave) {
+	actual = clave;
+	const p = PROBLEMAS[clave];
+	document.querySelectorAll('nav button').forEach((b) => b.setAttribute('aria-current', b.dataset.p === clave));
+	$('#problema').innerHTML = `
+		<h2>${clave} · ${esc(p.titulo)}</h2>
+		<p class="resumen">${esc(p.resumen)}</p>
+		<div class="roles">${Object.entries(p.motores).map(([m, rol]) => `<div class="rol">${motor(m)}<p>${esc(rol)}</p></div>`).join('')}</div>
+		${p.reales ? `<details class="fallas-reales"><summary>Falla real (apagando un motor)</summary><ol>${p.reales.map(([cmd, efecto]) =>
+			`<li>En una terminal: <code>${esc(cmd)}</code> y ejecutá el primer escenario: ${esc(efecto)}. Después: <code>${esc(cmd.replace('stop', 'start'))}</code>.</li>`).join('')}</ol></details>` : ''}`;
+	$('#escenarios').innerHTML = p.escenarios.map((e, i) => `
+		<div class="escenario">
+			<h4>${esc(e.titulo)}</h4>
+			<p>${esc(texto(e.desc).replace('{lim}', D.cuenta.limiteSesiones))}</p>
+			<div class="acciones">
+				<button class="boton primario" data-i="${i}">Ejecutar</button>
+				${e.fallas ? `<div class="fallar">Fallar en: ${e.fallas.map((f) => `<button data-i="${i}" data-falla="${esc(f)}" class="c-${p.pasos?.[f] ?? 'log'}" title="${esc(MOTORES[p.pasos?.[f]] ?? '')}"><i></i>${esc(f)}</button>`).join('')}</div>` : ''}
+			</div>
+		</div>`).join('');
+	$('#escenarios').querySelectorAll('button').forEach((b) =>
+		b.addEventListener('click', () => ejecutar(clave, Number(b.dataset.i), b.dataset.falla, b)));
+	try { localStorage.setItem('streamdb-demo-problema', clave); } catch {}
+}
+
+function armarNav() {
+	$('#nav').innerHTML = Object.entries(PROBLEMAS).map(([k, p]) => `
+		<button data-p="${k}"><span class="num">${k}</span><span class="nom">${esc(p.nombre)}</span>
+		<span class="puntos">${Object.keys(p.motores).map((m) => `<i class="c-${m}" title="${MOTORES[m]}"></i>`).join('')}</span></button>`).join('');
+	$('#nav').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => mostrarProblema(b.dataset.p)));
+}
+
+// ─── Estado de los motores ───────────────────────────────────────────────────
+const sinContador = (v) => String(v).replace(/vence en \d+ s/, '');
+
+const leerEstado = () => fetch(`/demo/api/estado?perfil=${sel().perfil.id}`).then((x) => {
+	if (!x.ok) throw new Error(`estado ${x.status}`);
+	return x.json();
+});
+
+async function refrescarEstado() {
+	try {
+		pintarEstado(await leerEstado());
+	} catch (e) {
+		$('#estado').innerHTML = `<div class="motor-estado">No se pudo leer el estado: ${esc(e.message)}</div>`;
+	}
+}
+
+function pintarEstado(r) {
+	const previo = estadoPrevio?.perfil === r.perfil ? estadoPrevio : null;
+	$('#estado').innerHTML = Object.entries(r.motores).map(([m, filas]) => {
+		const antes = new Map((previo?.motores[m] ?? []).map((f) => [f.clave, f.valor]));
+		return `<div class="motor-estado"><div class="cab">${motor(m)}<span class="rol-corto">${esc(ROL_CORTO[m])}</span></div>
+			${filas.map((f) => {
+				const cambio = previo && sinContador(antes.get(f.clave)) !== sinContador(f.valor);
+				return `<div class="fila ${cambio ? 'cambio' : ''}" ${cambio && antes.has(f.clave) ? `title="antes: ${esc(antes.get(f.clave))}"` : ''}><span class="k">${esc(f.clave)}</span><span class="v">${esc(f.valor)}</span></div>`;
+			}).join('') || '<div class="fila"><span class="k">—</span><span class="v">vacío</span></div>'}</div>`;
+	}).join('');
+	estadoPrevio = r;
+	$('#estadoHora').textContent = `perfil ${r.perfil} · ${new Date().toLocaleTimeString('es-AR')}`;
+}
+
+function actualizarSesion() {
+	const s = sesionActual();
+	$('#sesion').textContent = s ? `sesión ${s.id.slice(0, 8)}${s.finalizada ? ' · episodio terminado' : ''}` : 'sin sesión en este dispositivo';
+}
+
+let temporizador;
+function aviso(texto) {
+	const a = $('#aviso');
+	a.textContent = texto;
+	a.classList.add('visible');
+	clearTimeout(temporizador);
+	temporizador = setTimeout(() => a.classList.remove('visible'), 3500);
+}
+
+// ─── Arranque ────────────────────────────────────────────────────────────────
+async function arrancar() {
+	try {
+		D = await fetch('/demo/api/datos').then((r) => { if (!r.ok) throw new Error('corré npm run seed'); return r.json(); });
+	} catch (e) {
+		$('#problema').innerHTML = `<h2>No se pudieron leer los datos de demo</h2><p class="resumen">${esc(e.message)}</p>`;
+		return;
+	}
+	$('#perfil').innerHTML = D.perfiles.map((p) => `<option value="${p.id}">${esc(p.nombre)} (+${p.clasificacionEdad})</option>`).join('');
+	$('#dispositivo').innerHTML = D.dispositivos.map((d, i) => `<option value="${d}">${i + 1} · ${d.slice(0, 8)}</option>`).join('');
+	$('#contenido').innerHTML = [D.serie, D.pelicula].filter(Boolean).map((c) =>
+		`<option value="${c.id}">${esc(c.titulo)} (+${c.clasificacionEdad})</option>`).join('');
+	$('#perfil').addEventListener('change', refrescarEstado);
+	$('#dispositivo').addEventListener('change', actualizarSesion);
+	$('#refrescar').addEventListener('click', refrescarEstado);
+	$('#reiniciar').addEventListener('click', async (ev) => {
+		ev.target.disabled = true;
+		try {
+			const r = await fetch('/demo/api/reiniciar', { method: 'POST' }).then((x) => x.json());
+			ctx.sesiones = {};
+			actualizarSesion();
+			aviso(`Demo reiniciada: ${r.sesionesCerradas} sesiones cerradas, ${r.retirosDeshechos} retiros deshechos, ${r.seriesBorradas} series borradas.`);
+			await refrescarEstado();
+		} finally { ev.target.disabled = false; }
+	});
+	armarNav();
+	let guardado = null;
+	try { guardado = localStorage.getItem('streamdb-demo-problema'); } catch {}
+	mostrarProblema(PROBLEMAS[guardado] ? guardado : 'P2');
+	actualizarSesion();
+	refrescarEstado();
+}
+arrancar();
+</script>
+</body>
+</html>

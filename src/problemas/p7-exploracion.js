@@ -1,5 +1,7 @@
 import db from '../db/mongo.js';
 import { cypher } from '../db/neo4j.js';
+import { redis } from '../db/redis.js';
+import { claves } from './p2-inicio-reproduccion-sesiones.js';
 import { esId } from '../lib/ids.js';
 import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
 
@@ -80,14 +82,32 @@ export async function explorar({ genero, idActor, idPlataforma, idPerfil, limite
 
 	// 5. Completar con los otros motores (solo para los contenidos de esta página)
 	const ids = resultado.contenidos.map((c) => c._id);
-	const vinculados = await buscarVinculados(ids, perfil?.clasificacionEdad);
-	// TODO Redis: si hay idPerfil, leer cv:{idPerfil}:{idContenido} de cada uno → progreso
+	const [vinculados, progresos] = await Promise.all([
+		buscarVinculados(ids, perfil?.clasificacionEdad),
+		// Redis: el "continuar viendo" del perfil en cada contenido (lo guarda P3). Los pedidos van en
+		// paralelo y el cliente de Redis los manda juntos, en una sola ida
+		idPerfil ? Promise.all(ids.map((id) => redis.hGetAll(claves.cv(idPerfil, id)))) : [],
+	]);
+
+	const progreso = (i) => {
+		const cv = progresos[i];
+		if (!cv?.idEpisodio) return null; // el perfil no lo empezó (o ya lo terminó)
+		return {
+			idEpisodio: cv.idEpisodio === ids[i] ? null : cv.idEpisodio, // en películas la unidad es el contenido
+			posicionSeg: Number(cv.segundo),
+			actualizado: cv.actualizado,
+		};
+	};
 
 	return {
 		pagina,
 		limite,
 		total: resultado.total[0]?.n ?? 0,
 		perfil: perfil && { nombre: perfil.nombre, clasificacionEdad: perfil.clasificacionEdad },
-		contenidos: resultado.contenidos.map((c) => ({ ...c, vinculados: vinculados.get(c._id) ?? [] })),
+		contenidos: resultado.contenidos.map((c, i) => ({
+			...c,
+			vinculados: vinculados.get(c._id) ?? [],
+			...(idPerfil && { progreso: progreso(i) }),
+		})),
 	};
 }
