@@ -169,3 +169,41 @@ test('cuerpoAlta: no duplica el prefijo y descarta episodios vacíos', () => {
 	assert.equal(c.titulo, 'Demo P1 · Otra');
 	assert.equal(c.temporadas[0].episodios.length, 1);
 });
+
+// ─── Correcciones de la revisión final ────────────────────────────────────────
+
+const player = await import('../demo/app/js/player.js');
+const api = await import('../demo/app/js/api.js');
+const router = await import('../demo/app/js/router.js');
+const { conLimite } = await import('../lib/limite.js');
+
+test('player: otro dispositivo no cierra la sesión anterior (así se llena el cupo en una pestaña)', () => {
+	assert.equal(player.cerrarAnteriorAlAbrir({ idDispositivo: 'tv' }, 'movil'), false);
+	assert.equal(player.cerrarAnteriorAlAbrir({ idDispositivo: 'tv' }, 'tv'), true);
+});
+
+test('player: con la sesión expirada o terminada no se puede seguir ni saltar al final', () => {
+	assert.deepEqual(player.controles({ expirada: true }), { pausa: false, final: false });
+	assert.deepEqual(player.controles({ terminado: true }), { pausa: false, final: false });
+	assert.deepEqual(player.controles({}), { pausa: true, final: true });
+});
+
+test('falla armada: solo se gasta si la saga falló en ese paso', () => {
+	const saga = (estado) => ({ traza: { saga: { pasos: [{ nombre: 'retirar_ficha', estado }] } } });
+	assert.equal(api.fallaConsumida(saga('fallido'), 'retirar_ficha'), true);
+	assert.equal(api.fallaConsumida(saga('pendiente'), 'retirar_ficha'), false);
+	assert.equal(api.fallaConsumida({ status: 409, traza: { saga: null } }, 'retirar_ficha'), false);
+});
+
+test('router: un render viejo deja de ser vigente cuando empieza otro', () => {
+	const primero = router.nuevoTurno();
+	assert.equal(primero(), true);
+	const segundo = router.nuevoTurno();
+	assert.equal(primero(), false);
+	assert.equal(segundo(), true);
+});
+
+test('conLimite: devuelve el valor o falla si tarda demasiado', async () => {
+	assert.equal(await conLimite(Promise.resolve(7), 50), 7);
+	await assert.rejects(conLimite(new Promise(() => {}), 50), /tardó más de 50 ms/);
+});

@@ -109,6 +109,8 @@ Al entrar se elige **usuario** o **admin**. Como usuario se elige la cuenta (la 
 Detalles para la presentación:
 
 - «El faro del norte» tiene una licencia vigente hasta el 2027-03-01: para retirarla, en Admin → Licencias poné una **fecha de referencia** posterior. Con la fecha del seed (2026-10-17), «Procesar vencimientos» retira los contenidos que ya no tienen licencia.
+- Sesiones desde una sola pestaña: ▶ en la TV, cambiá el dispositivo en la barra a Móvil y ▶ de nuevo (la TV sigue ocupando su lugar), y en un tercero ▶ da el 409 de cupo lleno. Si navegás con algo reproduciéndose, el reproductor se minimiza y sigue reportando (botón rojo «▶ … · volver» en la barra): así se ve en Admin → Sesiones activas, y con «Forzar expiración» y «volver» se ve el 410.
+- Una falla armada solo se gasta si la saga llega a ese paso: un rechazo previo (licencia vigente, perfil no apto, cupo lleno) la deja armada.
 - El perfil Niños (+7) no ve contenido +16; si intenta reproducir «El faro del norte», la API lo rechaza y la columna lo muestra.
 - **Reiniciar demo** (barra del admin) cierra las sesiones de la cuenta demo, vuelve a publicar lo retirado y borra las series cargadas desde la app o el panel.
 - `npm run prueba:app` prueba las rutas auxiliares de la app (`/demo/api/app/*`) y su lógica, con la API levantada y el seed cargado.

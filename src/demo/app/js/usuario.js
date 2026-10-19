@@ -74,17 +74,17 @@ export async function abrirDetalle(id) {
 let demo = null;
 const datosDemo = async () => (demo ??= await leer('/demo/api/datos'));
 
-registrar('home', async (vista) => {
+registrar('home', async (vista, params, sigue) => {
 	const p = estado.perfil;
 	vista.innerHTML = '<div id="destacado"></div><div id="filas"><p class="vacio">Cargando…</p></div>';
 
-	let generos, d;
-	try {
-		[{ generos }, d] = await Promise.all([leer('/demo/api/app/catalogo'), datosDemo()]);
-	} catch (e) {
-		vista.querySelector('#filas').innerHTML = `<p class="error-texto">No se pudo cargar el inicio: ${esc(e.message)}</p>`;
-		return;
-	}
+	// Si Neo4j no responde no hay géneros para las filas, pero "continuar viendo" (Redis) y las demás filas siguen
+	const [catalogo, d] = await Promise.all([
+		leer('/demo/api/app/catalogo').catch(() => null),
+		datosDemo().catch(() => null),
+	]);
+	if (!sigue()) return;
+	const generos = catalogo?.generos ?? [];
 	const pedidos = [
 		{ clave: 'cv', motor: 'redis', titulo: 'Continuar viendo', explica: 'el segundo exacto donde quedaste, en Redis',
 			ruta: `${API}/perfiles/${p.id}/continuar-viendo` },
@@ -94,6 +94,7 @@ registrar('home', async (vista) => {
 			ruta: `${API}/contenidos?genero=${encodeURIComponent(g)}&idPerfil=${p.id}&limite=12` })),
 	];
 	const resultados = await Promise.all(pedidos.map((x) => pedir({ ruta: x.ruta, mostrar: false })));
+	if (!sigue()) return;
 	if (!estado.conservarColumna) mostrarClic(`Abrir el inicio de ${p.nombre}`, combinar(resultados));
 	estado.conservarColumna = false;
 
@@ -128,10 +129,11 @@ registrar('home', async (vista) => {
 
 	// Destacado: lo primero de "continuar viendo" que sea apto; si no, la serie demo si es apta; si no, lo primero del catálogo
 	const cv = resultados[0].status === 200 ? resultados[0].cuerpo.contenidos : [];
-	const candidatos = [...cv.slice(0, 3).map((c) => ({ id: c.idContenido, cv: c })), { id: d.serie.id }];
+	const candidatos = [...cv.slice(0, 3).map((c) => ({ id: c.idContenido, cv: c })), ...(d ? [{ id: d.serie.id }] : [])];
 	let elegido = null;
 	for (const cand of candidatos) {
 		const ficha = await leer(`/demo/api/app/contenidos/${cand.id}`).catch(() => null);
+		if (!sigue()) return;
 		if (ficha && ficha.estado === 'publicado' && ficha.clasificacionEdad <= p.clasificacionEdad) { elegido = { ...cand, ficha }; break; }
 	}
 	const primero = resultados[2]?.cuerpo?.contenidos?.[0];

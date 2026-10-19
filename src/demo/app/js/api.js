@@ -4,13 +4,19 @@ import { mostrarClic } from './motores.js';
 import { esc } from './util.js';
 
 let falla = null;
+const LIMITE_MS = 10000; // con un motor caído la API puede no responder: se corta y se muestra el error
+
+// La falla armada se gasta solo si la saga llegó a ese paso y falló ahí
+// (un rechazo previo, como una licencia vigente o un perfil no apto, no la consume)
+export const fallaConsumida = (r, paso) => Boolean(r.traza?.saga?.pasos?.some((p) => p.nombre === paso && p.estado === 'fallido'));
 
 export async function pedir({ metodo = 'GET', ruta, body, accion, pasos = [], mostrar = true }) {
-	if (falla && pasos.includes(falla)) {
-		ruta += (ruta.includes('?') ? '&' : '?') + 'fallarEn=' + encodeURIComponent(falla);
+	const usada = falla && pasos.includes(falla) ? falla : null;
+	if (usada) {
+		ruta += (ruta.includes('?') ? '&' : '?') + 'fallarEn=' + encodeURIComponent(usada);
 		armarFalla(null);
 	}
-	const opciones = { method: metodo, headers: { 'x-traza': '1' } };
+	const opciones = { method: metodo, headers: { 'x-traza': '1' }, signal: AbortSignal.timeout(LIMITE_MS) };
 	if (body !== undefined) {
 		opciones.headers['content-type'] = 'application/json';
 		opciones.body = JSON.stringify(body);
@@ -27,13 +33,14 @@ export async function pedir({ metodo = 'GET', ruta, body, accion, pasos = [], mo
 		cuerpo = { error: `No se pudo conectar con la API: ${e.message}` };
 	}
 	const resultado = { status, cuerpo, traza };
+	if (usada && !fallaConsumida(resultado, usada)) armarFalla(usada);
 	if (mostrar && accion) mostrarClic(accion, resultado);
 	return resultado;
 }
 
 // Consultas internas de la app (sin traza): devuelven el JSON o lanzan
 export async function leer(ruta, opciones) {
-	const r = await fetch(ruta, opciones);
+	const r = await fetch(ruta, { signal: AbortSignal.timeout(LIMITE_MS), ...opciones });
 	const cuerpo = await r.json().catch(() => null);
 	if (!r.ok) throw new Error(cuerpo?.error ?? `Error ${r.status}`);
 	return cuerpo;

@@ -20,7 +20,18 @@ export function unidad(ficha, idEpisodio) {
 	return { texto: 'Episodio', duracionSeg: DURACION_POR_DEFECTO };
 }
 
+// Otro dispositivo no cierra la sesión anterior: queda activa (como otra pantalla de la casa) y
+// vence sola a los 2 minutos sin reportes. Así se llena el cupo desde una sola pestaña (P2 → 409).
+export const cerrarAnteriorAlAbrir = (anterior, idDispositivo) => anterior.idDispositivo === idDispositivo;
+
+// Qué controles tienen sentido: con la sesión expirada o el episodio terminado, solo salir
+export const controles = (s) => {
+	const activa = !s.expirada && !s.terminado;
+	return { pausa: activa, final: activa };
+};
+
 let reloj = null;       // setInterval del avance
+let minimizado = false; // se navegó a otra vista: sigue reportando, sin pisar la columna
 let ultimoReporte = 0;
 let enviando = false;
 
@@ -35,7 +46,11 @@ function detener() {
 // ─── Abrir ────────────────────────────────────────────────────────────────────
 
 export async function abrirPlayer(idContenido, idEpisodio) {
-	if (sesion()) await cerrarPlayer({ silencioso: true });
+	let anterior = sesion();
+	if (anterior && cerrarAnteriorAlAbrir(anterior, estado.dispositivo.id)) {
+		await cerrarPlayer({ silencioso: true });
+		anterior = null;
+	}
 	const body = { idPerfil: estado.perfil.id, idDispositivo: estado.dispositivo.id, idContenido, ...(idEpisodio && { idEpisodio }) };
 	const r = await pedir({ metodo: 'POST', ruta: `${API}/reproducciones`, body, accion: '▶ Reproducir', pasos: ['reservar_cupo', 'registrar_inicio'] });
 
@@ -46,15 +61,45 @@ export async function abrirPlayer(idContenido, idEpisodio) {
 		return;
 	}
 
+	// La otra pantalla se suelta recién si esta pudo empezar (si hubo 409, se sigue pudiendo volver a ella)
+	if (anterior) soltar(anterior);
 	const ficha = await leer(`/demo/api/app/contenidos/${idContenido}`).catch(() => ({ titulo: 'Contenido', tipo: 'pelicula' }));
 	const u = unidad(ficha, r.cuerpo.idEpisodio);
 	estado.sesion = {
-		idSesion: r.cuerpo.idSesion, idContenido, idEpisodio: r.cuerpo.idEpisodio,
+		idSesion: r.cuerpo.idSesion, idContenido, idEpisodio: r.cuerpo.idEpisodio, idDispositivo: estado.dispositivo.id,
 		titulo: ficha.titulo, texto: u.texto, duracionSeg: u.duracionSeg,
 		posicionSeg: r.cuerpo.posicionSeg ?? 0, reutilizada: r.cuerpo.sesionReutilizada, terminado: false,
 	};
+	minimizado = false;
 	pintar();
 	reproducir();
+	avisarCambio();
+}
+
+// La sesión anterior era de otro dispositivo: se deja de mirar acá, pero sigue ocupando su lugar
+function soltar(anterior) {
+	detener();
+	estado.sesion = null;
+	el().hidden = true;
+	const d = estado.dispositivos.find((x) => x.id === anterior.idDispositivo);
+	aviso(`La sesión en ${d?.modelo ?? 'el otro dispositivo'} sigue ocupando un lugar: vence sola a los 2 minutos sin reportes`);
+}
+
+const avisarCambio = () => window.dispatchEvent(new Event('player-cambio'));
+
+// Listeners globales (fuera del import, así el módulo también se puede importar en las pruebas)
+export function iniciar() {
+	// Cambiar de vista (o de perfil o dispositivo) con algo reproduciéndose lo minimiza:
+	// la sesión sigue activa y se ve en Admin → Sesiones
+	window.addEventListener('antes-de-pintar', () => {
+		if (sesion() && !el().hidden) { minimizado = true; el().hidden = true; }
+	});
+	window.addEventListener('volver-player', () => {
+		if (!sesion()) return;
+		minimizado = false;
+		el().hidden = false;
+		avisarCambio();
+	});
 }
 
 // La cuenta llegó a su límite de pantallas (P2 → 409)
@@ -95,10 +140,13 @@ async function reportar(evento = 'reporte') {
 	enviando = true;
 	ultimoReporte = Date.now();
 	const textos = { reporte: 'Mirando… reporte de progreso', pausa: '⏸ Pausa', cierre: '✕ Salir del reproductor' };
-	const r = await pedir({ metodo: 'POST', ruta: `${API}/reproducciones/${s.idSesion}/progreso`, body: { posicionSeg: Math.round(s.posicionSeg), evento }, accion: textos[evento] });
+	const r = await pedir({ metodo: 'POST', ruta: `${API}/reproducciones/${s.idSesion}/progreso`, body: { posicionSeg: Math.round(s.posicionSeg), evento },
+		accion: textos[evento], mostrar: !minimizado });
 	enviando = false;
 	if (r.status === 410 && sesion() === s) {
 		detener();
+		s.expirada = true;
+		avisarCambio();
 		mensaje(`${esc(r.cuerpo.error)}. ${/expir/.test(r.cuerpo.error) ? 'Pasaron más de 2 minutos sin reportes (o se forzó la expiración): la sesión se cerró y el lugar se liberó.' : ''}`, true);
 	}
 	return r;
@@ -129,8 +177,10 @@ export async function cerrarPlayer({ silencioso = false } = {}) {
 	const s = sesion();
 	estado.sesion = null;
 	el().hidden = true;
+	minimizado = false;
+	avisarCambio();
 	if (!s) return;
-	if (!s.terminado) {
+	if (!s.terminado && !s.expirada) {
 		const r = await pedir({ metodo: 'POST', ruta: `${API}/reproducciones/${s.idSesion}/progreso`,
 			body: { posicionSeg: Math.round(s.posicionSeg), evento: 'cierre' }, accion: '✕ Salir del reproductor', mostrar: !silencioso });
 		if (r.status === 410) return;
@@ -162,9 +212,9 @@ function pintar() {
 		</div>`;
 	el().hidden = false;
 	el().querySelector('#salir-player').onclick = () => cerrarPlayer();
-	el().querySelector('#final').onclick = () => { const x = sesion(); if (x) { x.posicionSeg = x.duracionSeg - 1; terminar(); } };
+	el().querySelector('#final').onclick = () => { const x = sesion(); if (x && controles(x).final) { x.posicionSeg = x.duracionSeg - 1; terminar(); } };
 	el().querySelector('#pausa').onclick = () => {
-		if (reloj) { detener(); pintarBoton(); reportar('pausa'); } else if (sesion() && !sesion().terminado) reproducir();
+		if (reloj) { detener(); pintarBoton(); reportar('pausa'); } else if (sesion() && controles(sesion()).pausa) reproducir();
 	};
 	actualizar();
 }
@@ -173,7 +223,9 @@ function pintarBoton() {
 	const b = el().querySelector('#pausa');
 	if (!b) return;
 	b.textContent = reloj ? '⏸ Pausa' : '▶ Seguir';
-	b.disabled = Boolean(sesion()?.terminado);
+	const c = sesion() ? controles(sesion()) : { pausa: false, final: false };
+	b.disabled = !c.pausa;
+	el().querySelector('#final').disabled = !c.final;
 }
 
 function actualizar() {

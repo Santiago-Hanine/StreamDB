@@ -8,6 +8,7 @@ import { redis } from '../db/redis.js';
 import { cassandraClient } from '../db/cassandra.js';
 import { sql } from '../db/postgres.js';
 import { sinTraza } from './traza.js';
+import { conLimite } from '../lib/limite.js';
 import { datosDemo } from './rutas.js';
 import { esId } from '../lib/ids.js';
 import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
@@ -19,6 +20,7 @@ const MAX_BUSQUEDA = 10;
 const LICENCIAS_EXTRA = 8;
 const ACTORES = 12;
 const TIPOS_DISPOSITIVO = ['tv', 'movil', 'web', 'consola', 'tablet'];
+const PING_MS = 1500; // un motor caído no responde nunca (Redis encola los comandos): se lo da por caído
 
 const escaparRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const conTodo = (fn) => async (req, res) => res.json(await sinTraza(() => fn(req)));
@@ -34,7 +36,7 @@ router.get('/motores', conTodo(async () => {
 		postgres: () => sql('SELECT 1'),
 	};
 	const nombres = Object.keys(pings);
-	const resultados = await Promise.allSettled(nombres.map((m) => pings[m]()));
+	const resultados = await Promise.allSettled(nombres.map((m) => conLimite(pings[m](), PING_MS)));
 	return Object.fromEntries(nombres.map((m, i) => [m, resultados[i].status === 'fulfilled']));
 }));
 
