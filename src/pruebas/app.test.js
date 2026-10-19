@@ -92,6 +92,9 @@ test('frase: P2 reutiliza la sesión del dispositivo', () => {
 test('frase: P3 guarda el segundo exacto', () => {
 	assert.equal(frase('redis', [op('redis', 'EVAL')], { checkpoint: 'no_corresponde' }), 'Guardó el segundo exacto (continuar viendo)');
 });
+test('frase: P8 borra el continuar viendo en Redis', () => {
+	assert.equal(frase('redis', [op('redis', 'EVAL')], { estado: 'retirado' }), 'Borró el "continuar viendo" de todos los perfiles y marcó el retiro');
+});
 test('frase: Cassandra escribe en el historial', () => {
 	assert.equal(frase('cassandra', [op('cassandra', 'INSERT')], {}), 'Escribió en el historial');
 });
@@ -136,4 +139,27 @@ test('rangoMeses: tres meses hasta el actual', () => {
 });
 test('rangoMeses: cruza el año', () => {
 	assert.deepEqual(rangoMeses(new Date('2026-02-10T12:00:00Z'), 3), { desde: '2025-12', hasta: '2026-02' });
+});
+
+// ─── Admin: cuerpo del alta de serie (P1) ─────────────────────────────────────
+
+const { cuerpoAlta } = await import('../demo/app/js/admin.js');
+const demoP1 = {
+	prefijoAlta: 'Demo P1 · ',
+	serie: { id: 's1', generos: ['Drama', 'Suspenso', 'Acción'], idPlataforma: 'p1', elenco: [{ idActor: 'a1' }, { idActor: 'a2' }] },
+};
+
+test('cuerpoAlta: arma la serie con el prefijo, 2 géneros, elenco y vínculo con la serie demo', () => {
+	const c = cuerpoAlta(demoP1, { titulo: 'Mi serie', episodios: ['Piloto', 'La tormenta'] });
+	assert.equal(c.titulo, 'Demo P1 · Mi serie');
+	assert.deepEqual(c.generos, ['Drama', 'Suspenso']);
+	assert.equal(c.idPlataforma, 'p1');
+	assert.deepEqual(c.elenco.map((a) => a.idActor), ['a1', 'a2']);
+	assert.deepEqual(c.vinculos, [{ idContenido: 's1', tipo: 'secuela' }]);
+	assert.deepEqual(c.temporadas, [{ numero: 1, episodios: [{ titulo: 'Piloto', duracionSeg: 2700 }, { titulo: 'La tormenta', duracionSeg: 2700 }] }]);
+});
+test('cuerpoAlta: no duplica el prefijo y descarta episodios vacíos', () => {
+	const c = cuerpoAlta(demoP1, { titulo: 'Demo P1 · Otra', episodios: ['Uno', '  ', ''] });
+	assert.equal(c.titulo, 'Demo P1 · Otra');
+	assert.equal(c.temporadas[0].episodios.length, 1);
 });

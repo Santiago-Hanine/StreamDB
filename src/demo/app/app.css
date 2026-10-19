@@ -28,7 +28,7 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 h1, h2, h3 { margin: 0 0 .5em; line-height: 1.2; }
-button, select, input { font: inherit; color: inherit; }
+button, select, input, textarea { font: inherit; color: inherit; }
 
 /* ─── Estructura ───────────────────────────────────────────────────────────── */
 
@@ -238,3 +238,4 @@ details.detalle pre { white-space: pre-wrap; word-break: break-word; background:
 .fallas .pasos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .paso-falla { border-radius: 8px; padding: 6px 12px; cursor: pointer; border: 2px solid transparent; font-weight: 600; }
 .paso-falla.armado { border-color: #fff; box-shadow: 0 0 0 3px var(--error); }
+.paso-falla.m-mongo, .paso-falla.m-cassandra { color: #000; }

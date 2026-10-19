@@ -29,6 +29,7 @@ export function frase(motor, ops, cuerpo = {}) {
 			if (c.checkpoint) return 'Guardó el segundo exacto (continuar viendo)';
 			if (c.siguiente !== undefined && c.finalizado) return 'Movió "continuar viendo" al episodio siguiente';
 			if (c.cerradas !== undefined || c.cerrada !== undefined) return 'Cerró sesiones y liberó el cupo';
+			if (c.estado === 'retirado' || c.retirados) return 'Borró el "continuar viendo" de todos los perfiles y marcó el retiro';
 			if (!hay(ops, ESCRITURA)) return 'Leyó sesiones y "continuar viendo"';
 			break;
 		case 'cassandra':
@@ -57,7 +58,7 @@ export function frase(motor, ops, cuerpo = {}) {
 function resultado({ status, cuerpo, traza }) {
 	const saga = traza?.saga;
 	if (status >= 400 || !status) {
-		const motivo = esc(cuerpo?.error ?? `Error ${status}`);
+		const motivo = esc(String(cuerpo?.error ?? `Error ${status}`).replace(/\.$/, ''));
 		if (saga?.estado === 'compensada') return `<div class="resultado mal">✕ ${motivo}. La saga se compensó: los motores quedaron como antes.</div>`;
 		return `<div class="resultado mal">✕ ${motivo}</div>`;
 	}

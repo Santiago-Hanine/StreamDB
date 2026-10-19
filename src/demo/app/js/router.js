@@ -50,8 +50,10 @@ function pintarBarra(actual) {
 				<label title="Perfil">👤 <select id="sel-perfil">${perfiles}</select></label>
 				<label title="Dispositivo"><select id="sel-dispositivo">${dispositivos}</select></label>
 				<span class="cuenta" title="Cuenta">${esc(estado.cuenta.email)}</span>
+				<button class="boton chico" id="a-admin">Admin</button>
 				<button class="boton chico" id="salir">Salir</button>
 			</div>`;
+		barra.querySelector('#a-admin').onclick = () => { estado.modo = 'admin'; guardar(); ir('admin/catalogo'); };
 		barra.querySelector('#sel-perfil').onchange = (e) => {
 			estado.perfil = estado.cuenta.perfiles.find((p) => p.id === e.target.value);
 			guardar(); pintar();
@@ -63,7 +65,14 @@ function pintarBarra(actual) {
 	} else if (estado.modo === 'admin') {
 		barra.innerHTML = `${logo}<span class="etiqueta-admin">Admin</span>
 			<nav>${link('admin/catalogo', 'Catálogo')}${link('admin/licencias', 'Licencias')}${link('admin/sesiones', 'Sesiones activas')}${link('admin/fallas', 'Fallas')}</nav>
-			<div class="selectores"><button class="boton chico" id="reiniciar">Reiniciar demo</button><button class="boton chico" id="salir">Salir</button></div>`;
+			<div class="selectores"><button class="boton chico" id="reiniciar">Reiniciar demo</button>
+				<button class="boton chico" id="a-usuario">Vista usuario ↩</button><button class="boton chico" id="salir">Salir</button></div>`;
+		// Vuelve con la cuenta, el perfil y el dispositivo que se habían elegido (si los hay)
+		barra.querySelector('#a-usuario').onclick = () => {
+			estado.modo = 'usuario';
+			guardar();
+			ir(estado.cuenta && estado.perfil && estado.dispositivo ? 'home' : 'cuentas');
+		};
 	} else {
 		barra.innerHTML = logo;
 	}
