@@ -136,7 +136,11 @@ export async function cerrarPlayer({ silencioso = false } = {}) {
 		if (r.status === 410) return;
 	}
 	await pedir({ metodo: 'DELETE', ruta: `${API}/reproducciones/${s.idSesion}`, accion: 'Cerrar la sesión de este dispositivo', mostrar: !silencioso });
-	if (!silencioso && location.hash.startsWith('#/home')) window.dispatchEvent(new HashChangeEvent('hashchange'));
+	// Se recarga el inicio ("continuar viendo" cambió) sin tapar en la columna el cierre de la sesión
+	if (!silencioso && location.hash.startsWith('#/home')) {
+		estado.conservarColumna = true;
+		window.dispatchEvent(new HashChangeEvent('hashchange'));
+	}
 }
 
 // ─── Pantalla ─────────────────────────────────────────────────────────────────

@@ -94,7 +94,8 @@ registrar('home', async (vista) => {
 			ruta: `${API}/contenidos?genero=${encodeURIComponent(g)}&idPerfil=${p.id}&limite=12` })),
 	];
 	const resultados = await Promise.all(pedidos.map((x) => pedir({ ruta: x.ruta, mostrar: false })));
-	mostrarClic(`Abrir el inicio de ${p.nombre}`, combinar(resultados));
+	if (!estado.conservarColumna) mostrarClic(`Abrir el inicio de ${p.nombre}`, combinar(resultados));
+	estado.conservarColumna = false;
 
 	// Filas
 	const filas = pedidos.map((x, i) => {

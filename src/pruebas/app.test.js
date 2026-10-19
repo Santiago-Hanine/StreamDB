@@ -95,6 +95,12 @@ test('frase: P3 guarda el segundo exacto', () => {
 test('frase: P8 borra el continuar viendo en Redis', () => {
 	assert.equal(frase('redis', [op('redis', 'EVAL')], { estado: 'retirado' }), 'Borró el "continuar viendo" de todos los perfiles y marcó el retiro');
 });
+test('frase: P4 de una película quita el continuar viendo', () => {
+	assert.equal(frase('redis', [op('redis', 'EVAL')], { finalizado: 'x', siguiente: null }), 'Lo quitó de "continuar viendo" (no hay siguiente)');
+});
+test('frase: Cassandra registra el cierre de una sesión', () => {
+	assert.equal(frase('cassandra', [op('cassandra', 'INSERT', 'INSERT INTO sesiones_por_cuenta (id_cuenta) VALUES (?)')], {}), 'Registró el cierre de la sesión');
+});
 test('frase: Cassandra escribe en el historial', () => {
 	assert.equal(frase('cassandra', [op('cassandra', 'INSERT')], {}), 'Escribió en el historial');
 });

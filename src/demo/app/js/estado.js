@@ -8,10 +8,11 @@ export const estado = {
 	dispositivo: null,  // { id, tipo, modelo, sistemaOperativo }
 	dispositivos: [],   // los que se pueden elegir
 	sesion: null,       // reproducción en curso (no se guarda)
+	conservarColumna: false, // la próxima vista no pisa la columna de motores (no se guarda)
 };
 
 export function guardar() {
-	const { sesion, ...resto } = estado;
+	const { sesion, conservarColumna, ...resto } = estado;
 	try { localStorage.setItem(CLAVE, JSON.stringify(resto)); } catch { /* sin almacenamiento: se vuelve a elegir */ }
 }
 

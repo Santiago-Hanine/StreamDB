@@ -27,12 +27,14 @@ export function frase(motor, ops, cuerpo = {}) {
 			if (c.sesionReutilizada) return 'Reutilizó la sesión de este dispositivo';
 			if (c.idSesion && 'sesionReutilizada' in c) return 'Reservó un lugar en el cupo de pantallas';
 			if (c.checkpoint) return 'Guardó el segundo exacto (continuar viendo)';
-			if (c.siguiente !== undefined && c.finalizado) return 'Movió "continuar viendo" al episodio siguiente';
+			if (c.siguiente === null && c.finalizado) return 'Lo quitó de "continuar viendo" (no hay siguiente)';
+			if (c.siguiente && c.finalizado) return 'Movió "continuar viendo" al episodio siguiente';
 			if (c.cerradas !== undefined || c.cerrada !== undefined) return 'Cerró sesiones y liberó el cupo';
 			if (c.estado === 'retirado' || c.retirados) return 'Borró el "continuar viendo" de todos los perfiles y marcó el retiro';
 			if (!hay(ops, ESCRITURA)) return 'Leyó sesiones y "continuar viendo"';
 			break;
 		case 'cassandra':
+			if (ops.some((o) => /^(INSERT|UPDATE|BATCH)/.test(o.op) && /sesiones_por_cuenta/.test(o.detalle)) && !ops.some((o) => /historial_por/.test(o.detalle))) return 'Registró el cierre de la sesión';
 			if (hay(ops, /^(INSERT|UPDATE|BATCH)/)) return 'Escribió en el historial';
 			if (hay(ops, /^DELETE/)) return 'Borró una fila (compensación)';
 			if (hay(ops, /^SELECT/)) return 'Leyó el historial por perfil y mes';
