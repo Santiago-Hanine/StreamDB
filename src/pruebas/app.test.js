@@ -55,3 +55,9 @@ test('las consultas de la app no se registran en una traza', async () => {
 	const t = await get('/demo/api/trazas/' + r.headers.get('x-traza'));
 	assert.deepEqual(t.ops, []);
 });
+
+test('la app se sirve en /app', async () => {
+	const r = await fetch(base + '/app/');
+	assert.equal(r.status, 200);
+	assert.match(await r.text(), /<aside id="motores"/);
+});

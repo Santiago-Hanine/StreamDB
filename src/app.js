@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { fileURLToPath } from 'node:url';
 import './db/mongo.js';
 import { client as mongo } from './db/mongo.js';
 import { driver as neo4j } from './db/neo4j.js';
@@ -32,6 +33,7 @@ app.use(API_PATH + '/reproducciones', reproducciones);
 app.use(API_PATH + '/perfiles', perfiles);
 app.use(API_PATH + '/cuentas', cuentas);
 app.use(API_PATH + '/licencias', licencias);
+app.use('/app', express.static(fileURLToPath(new URL('./demo/app', import.meta.url)))); // app de demo (http://localhost:PORT/app)
 app.use('/demo/api/app', appDemo); // rutas auxiliares de la app de demo (/app)
 app.use('/demo', demo); // panel para ejecutar cada problema y cada falla (http://localhost:PORT/demo)
 // 2. Ruta inexistente
