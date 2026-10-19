@@ -126,3 +126,14 @@ test('unidad: película usa la duración de la ficha', () => {
 test('unidad: episodio desconocido usa 45 minutos', () => {
 	assert.deepEqual(unidad(serie, 'zz'), { texto: 'Episodio', duracionSeg: 2700 });
 });
+
+// ─── Mi actividad: período de los últimos meses (AAAA-MM) ─────────────────────
+
+const { rangoMeses } = await import('../demo/app/js/usuario.js');
+
+test('rangoMeses: tres meses hasta el actual', () => {
+	assert.deepEqual(rangoMeses(new Date('2026-10-19T12:00:00Z'), 3), { desde: '2026-08', hasta: '2026-10' });
+});
+test('rangoMeses: cruza el año', () => {
+	assert.deepEqual(rangoMeses(new Date('2026-02-10T12:00:00Z'), 3), { desde: '2025-12', hasta: '2026-02' });
+});

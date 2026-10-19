@@ -3,10 +3,12 @@ import { registrar } from './router.js';
 import { estado } from './estado.js';
 import { pedir, leer, combinar } from './api.js';
 import { mostrarClic } from './motores.js';
-import { abrirPlayer } from './player.js';
+import { abrirPlayer, unidad } from './player.js';
 import { esc, pildora, tiempo, abrirModal, cerrarModal } from './util.js';
 
 const GENEROS_EN_INICIO = 2;
+const POR_PAGINA = 24;
+const MESES_ACTIVIDAD = 3;
 const API = '/api/v1';
 
 // ─── Carátulas: degradado derivado del id (sin imágenes externas) ─────────────
@@ -144,4 +146,104 @@ registrar('home', async (vista) => {
 		<button class="boton" id="info">Más información</button></div></div>`;
 	vista.querySelector('#play').onclick = () => abrirPlayer(elegido.id);
 	vista.querySelector('#info').onclick = () => abrirDetalle(elegido.id);
+}, 'usuario');
+
+// ─── Explorar (P7) ────────────────────────────────────────────────────────────
+
+const opciones = (lista, elegido, todos) => `<option value="">${todos}</option>`
+	+ lista.map((x) => `<option value="${esc(x.id ?? x)}" ${(x.id ?? x) === elegido ? 'selected' : ''}>${esc(x.nombre ?? x)}</option>`).join('');
+
+registrar('explorar', async (vista) => {
+	const filtro = { genero: '', idActor: '', idPlataforma: '', pagina: 1 };
+	let catalogo;
+	try { catalogo = await leer('/demo/api/app/catalogo'); } catch (e) {
+		vista.innerHTML = `<p class="error-texto">${esc(e.message)}</p>`;
+		return;
+	}
+	vista.innerHTML = `<h1>Explorar</h1>
+		<p class="suave">Filtros combinados en ${pildora('mongo')} (solo lo publicado y apto para ${esc(estado.perfil.nombre)}),
+		lo vinculado de cada resultado en ${pildora('neo4j')} y dónde quedaste en ${pildora('redis')}.</p>
+		<div class="filtros">
+			<select class="campo" id="f-genero">${opciones(catalogo.generos, '', 'Todos los géneros')}</select>
+			<select class="campo" id="f-actor">${opciones(catalogo.actores, '', 'Cualquier actor')}</select>
+			<select class="campo" id="f-plataforma">${opciones(catalogo.plataformas, '', 'Todas las plataformas')}</select>
+			<span class="suave" id="total"></span>
+		</div>
+		<div class="grilla" id="resultados"></div>
+		<div class="paginado"><button class="boton" id="ant">← Anterior</button><span id="pagina"></span><button class="boton" id="sig">Siguiente →</button></div>`;
+	const grilla = vista.querySelector('#resultados');
+	alClicCaratula(grilla);
+
+	const buscar = async () => {
+		const q = new URLSearchParams({ idPerfil: estado.perfil.id, limite: POR_PAGINA, pagina: filtro.pagina });
+		for (const k of ['genero', 'idActor', 'idPlataforma']) if (filtro[k]) q.set(k, filtro[k]);
+		grilla.innerHTML = '<p class="vacio">Buscando…</p>';
+		const r = await pedir({ ruta: `${API}/contenidos?${q}`, accion: 'Explorar con filtros' });
+		if (r.status !== 200) {
+			grilla.innerHTML = `<p class="error-texto">${esc(r.cuerpo?.error ?? 'Error')}</p>`;
+			return;
+		}
+		const { contenidos, total } = r.cuerpo;
+		const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+		vista.querySelector('#total').textContent = `${total} resultado${total === 1 ? '' : 's'}`;
+		vista.querySelector('#pagina').textContent = `Página ${filtro.pagina} de ${paginas}`;
+		vista.querySelector('#ant').disabled = filtro.pagina <= 1;
+		vista.querySelector('#sig').disabled = filtro.pagina >= paginas;
+		grilla.innerHTML = contenidos.map((c) => caratula({ id: c._id, titulo: c.titulo }, {
+			tag: c.vinculados?.length ? `${c.vinculados.length} vinculado${c.vinculados.length === 1 ? '' : 's'}` : '',
+			extra: `${c.tipo === 'serie' ? `Serie · ${c.cantidadEpisodios} ep.` : 'Película'} · +${c.clasificacionEdad}${c.progreso ? ` · seguís en ${tiempo(c.progreso.posicionSeg)}` : ''}`,
+		})).join('') || '<p class="vacio">No hay contenidos con esos filtros.</p>';
+	};
+	const cambiar = (clave) => (e) => { filtro[clave] = e.target.value; filtro.pagina = 1; buscar(); };
+	vista.querySelector('#f-genero').onchange = cambiar('genero');
+	vista.querySelector('#f-actor').onchange = cambiar('idActor');
+	vista.querySelector('#f-plataforma').onchange = cambiar('idPlataforma');
+	vista.querySelector('#ant').onclick = () => { filtro.pagina--; buscar(); };
+	vista.querySelector('#sig').onclick = () => { filtro.pagina++; buscar(); };
+	await buscar();
+}, 'usuario');
+
+// ─── Mi actividad (P3: historial en Cassandra) ────────────────────────────────
+
+export function rangoMeses(hoy, meses) {
+	const aaaamm = (d) => d.toISOString().slice(0, 7);
+	const desde = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - (meses - 1), 1));
+	return { desde: aaaamm(desde), hasta: aaaamm(hoy) };
+}
+
+registrar('actividad', async (vista) => {
+	const { desde, hasta } = rangoMeses(new Date(), MESES_ACTIVIDAD);
+	vista.innerHTML = `<h1>Mi actividad</h1>
+		<p class="suave">El historial vive en ${pildora('cassandra')}, particionado por perfil y mes: cada mes es una
+		consulta por clave completa (${esc(estado.perfil.nombre)}, AAAA-MM), sin ALLOW FILTERING. Período: ${desde} a ${hasta}.</p>
+		<div id="tabla"><p class="vacio">Cargando…</p></div>`;
+	const r = await pedir({ ruta: `${API}/perfiles/${estado.perfil.id}/historial?desde=${desde}&hasta=${hasta}`, accion: 'Ver mi actividad' });
+	const caja = vista.querySelector('#tabla');
+	if (r.status !== 200) {
+		caja.innerHTML = `<p class="error-texto">${esc(r.cuerpo?.error ?? 'Error')}</p>`;
+		return;
+	}
+	const { visualizaciones } = r.cuerpo;
+	if (!visualizaciones.length) {
+		caja.innerHTML = '<p class="vacio">No viste nada en este período.</p>';
+		return;
+	}
+	// Nombres de los episodios: una ficha por serie distinta
+	const series = [...new Set(visualizaciones.filter((v) => v.idEpisodio && v.idEpisodio !== v.idContenido).map((v) => v.idContenido))];
+	const fichas = new Map(await Promise.all(series.map(async (id) => [id, await leer(`/demo/api/app/contenidos/${id}`).catch(() => null)])));
+	const fecha = (f) => new Date(f).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+	caja.innerHTML = `<p class="suave">${visualizaciones.length} visualizaciones</p><table class="tabla">
+		<tr><th>Cuándo</th><th>Qué</th><th>Unidad</th><th>Hasta</th><th></th></tr>
+		${visualizaciones.map((v) => {
+			const ficha = fichas.get(v.idContenido);
+			const texto = ficha ? unidad(ficha, v.idEpisodio).texto : 'Película';
+			return `<tr><td class="suave">${fecha(v.fechaInicio)}</td><td><a href="#" data-id="${v.idContenido}"><b>${esc(v.titulo ?? v.idContenido)}</b></a></td>
+				<td>${esc(texto)}</td><td>${tiempo(v.posicionSeg)}</td><td>${v.finalizado ? '✓ terminado' : ''}</td></tr>`;
+		}).join('')}</table>`;
+	caja.addEventListener('click', (e) => {
+		const a = e.target.closest('[data-id]');
+		if (!a) return;
+		e.preventDefault();
+		abrirDetalle(a.dataset.id);
+	});
 }, 'usuario');
