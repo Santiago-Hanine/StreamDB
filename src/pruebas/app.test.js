@@ -62,6 +62,22 @@ test('la app se sirve en /app', async () => {
 	assert.match(await r.text(), /<aside id="motores"/);
 });
 
+test('contenido: ficha de la serie demo con temporadas y duraciones', async () => {
+	const { cuentas } = await get('/demo/api/app/cuentas');
+	const { contenidos } = await get('/demo/api/app/licencias');
+	const c = await get('/demo/api/app/contenidos/' + contenidos[0].id);
+	assert.equal(c.titulo, 'El faro del norte');
+	assert.equal(c.clasificacionEdad, 16);
+	assert.equal(c.temporadas.length, 3);
+	assert.ok(c.temporadas[0].episodios[0].duracionSeg > 0);
+	assert.ok(cuentas.length);
+});
+
+test('contenido: id inválido responde 400', async () => {
+	const r = await fetch(base + '/demo/api/app/contenidos/no-es-un-id');
+	assert.equal(r.status, 400);
+});
+
 // ─── Frases de la columna de motores (lógica pura del frontend) ───────────────
 
 const { frase } = await import('../demo/app/js/motores.js');

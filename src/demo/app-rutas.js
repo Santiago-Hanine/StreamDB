@@ -9,6 +9,8 @@ import { cassandraClient } from '../db/cassandra.js';
 import { sql } from '../db/postgres.js';
 import { sinTraza } from './traza.js';
 import { datosDemo } from './rutas.js';
+import { esId } from '../lib/ids.js';
+import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
 
 const router = Router();
 
@@ -109,6 +111,18 @@ router.get('/licencias', conTodo(async (req) => {
 		[fijos, LICENCIAS_EXTRA],
 	);
 	return { contenidos: await conLicencias([...fijos, ...otros.map((f) => f.id_contenido)]) };
+}));
+
+// ─── Ficha de un contenido (para el detalle y la duración en el reproductor) ──
+
+router.get('/contenidos/:id', conTodo(async (req) => {
+	if (!esId(req.params.id)) throw pedidoInvalido('id no es un id válido');
+	const c = await db.collection('contenidos').findOne({ _id: req.params.id }, {
+		projection: { titulo: 1, tipo: 1, estado: 1, anioEstreno: 1, clasificacionEdad: 1, generos: 1, plataforma: 1, elenco: 1, duracionSeg: 1, temporadas: 1 },
+	});
+	if (!c) throw noEncontrado(`No existe el contenido ${req.params.id}`);
+	const { _id, ...resto } = c;
+	return { id: _id, ...resto };
 }));
 
 // ─── Catálogo para filtros y para el alta de P1 ───────────────────────────────

@@ -50,3 +50,18 @@ export function armarFalla(paso) {
 	el.querySelector('button').onclick = () => armarFalla(null);
 	document.dispatchEvent(new CustomEvent('falla-armada'));
 }
+
+// Junta varios pedidos en uno solo para la columna (ej. el inicio del usuario hace cuatro)
+export function combinar(resultados) {
+	const conTraza = resultados.filter((r) => r.traza);
+	const peor = resultados.find((r) => r.status >= 400 || r.status === 0);
+	return {
+		status: peor?.status ?? 200,
+		cuerpo: peor?.cuerpo ?? {},
+		traza: {
+			ms: Math.max(0, ...conTraza.map((r) => r.traza.ms ?? 0)),
+			ops: conTraza.flatMap((r) => r.traza.ops),
+			saga: null,
+		},
+	};
+}

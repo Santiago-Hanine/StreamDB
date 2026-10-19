@@ -48,7 +48,7 @@ function pintarBarra(actual) {
 		barra.innerHTML = `${logo}<nav>${link('home', 'Inicio')}${link('explorar', 'Explorar')}${link('actividad', 'Mi actividad')}</nav>
 			<div class="selectores">
 				<label title="Perfil">👤 <select id="sel-perfil">${perfiles}</select></label>
-				<label title="Dispositivo">${icono(estado.dispositivo.tipo)} <select id="sel-dispositivo">${dispositivos}</select></label>
+				<label title="Dispositivo"><select id="sel-dispositivo">${dispositivos}</select></label>
 				<span class="cuenta" title="Cuenta">${esc(estado.cuenta.email)}</span>
 				<button class="boton chico" id="salir">Salir</button>
 			</div>`;

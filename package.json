@@ -22,6 +22,9 @@
 		"prueba:concurrencia": "node src/pruebas/concurrencia.js",
 		"prueba:app": "node --test src/pruebas/app.test.js"
 	},
+	"nodemonConfig": {
+		"ignore": ["src/demo/app/*", "src/pruebas/*"]
+	},
 	"keywords": [],
 	"author": "",
 	"license": "ISC",
