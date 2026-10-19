@@ -16,6 +16,7 @@ import { iniciarVigilancia } from './problemas/p6-expiracion-cierre-sesiones.js'
 import { ErroresApp } from './lib/errores.js';
 import * as traza from './demo/traza.js';
 import demo from './demo/rutas.js';
+import appDemo from './demo/app-rutas.js';
 
 
 const API_PATH = process.env.API_PATH || '/api/v1';
@@ -31,6 +32,7 @@ app.use(API_PATH + '/reproducciones', reproducciones);
 app.use(API_PATH + '/perfiles', perfiles);
 app.use(API_PATH + '/cuentas', cuentas);
 app.use(API_PATH + '/licencias', licencias);
+app.use('/demo/api/app', appDemo); // rutas auxiliares de la app de demo (/app)
 app.use('/demo', demo); // panel para ejecutar cada problema y cada falla (http://localhost:PORT/demo)
 // 2. Ruta inexistente
 app.use((req, res) => {
