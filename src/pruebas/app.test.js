@@ -61,3 +61,33 @@ test('la app se sirve en /app', async () => {
 	assert.equal(r.status, 200);
 	assert.match(await r.text(), /<aside id="motores"/);
 });
+
+// ─── Frases de la columna de motores (lógica pura del frontend) ───────────────
+
+const { frase } = await import('../demo/app/js/motores.js');
+const op = (motor, op, detalle = '') => ({ motor, op, detalle });
+
+test('frase: P2 reserva el cupo en Redis', () => {
+	assert.equal(frase('redis', [op('redis', 'EVAL')], { idSesion: 'x', sesionReutilizada: false }), 'Reservó un lugar en el cupo de pantallas');
+});
+test('frase: P2 reutiliza la sesión del dispositivo', () => {
+	assert.equal(frase('redis', [op('redis', 'EVAL')], { idSesion: 'x', sesionReutilizada: true }), 'Reutilizó la sesión de este dispositivo');
+});
+test('frase: P3 guarda el segundo exacto', () => {
+	assert.equal(frase('redis', [op('redis', 'EVAL')], { checkpoint: 'no_corresponde' }), 'Guardó el segundo exacto (continuar viendo)');
+});
+test('frase: Cassandra escribe en el historial', () => {
+	assert.equal(frase('cassandra', [op('cassandra', 'INSERT')], {}), 'Escribió en el historial');
+});
+test('frase: Neo4j registra la señal VIO', () => {
+	assert.equal(frase('neo4j', [op('neo4j', 'MERGE', 'MERGE (p)-[r:VIO {idVisualizacion: $id}]->(c)')], {}), 'Registró la señal VIO (para recomendar)');
+});
+test('frase: Neo4j recorre el grafo', () => {
+	assert.equal(frase('neo4j', [op('neo4j', 'MATCH')], {}), 'Recorrió el grafo (vínculos, elenco, géneros)');
+});
+test('frase: Postgres cambia licencias', () => {
+	assert.equal(frase('postgres', [op('postgres', 'SELECT'), op('postgres', 'UPDATE')], {}), 'Cambió el estado de licencias');
+});
+test('frase: Mongo actualiza el catálogo', () => {
+	assert.equal(frase('mongo', [op('mongo', 'update', 'contenidos · filtro {}')], {}), 'Actualizó el catálogo');
+});
