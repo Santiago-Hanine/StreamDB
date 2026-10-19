@@ -107,3 +107,22 @@ test('frase: Postgres cambia licencias', () => {
 test('frase: Mongo actualiza el catálogo', () => {
 	assert.equal(frase('mongo', [op('mongo', 'update', 'contenidos · filtro {}')], {}), 'Actualizó el catálogo');
 });
+
+// ─── Reproductor: qué unidad se está viendo y cuánto dura ─────────────────────
+
+const { unidad } = await import('../demo/app/js/player.js');
+const serie = {
+	tipo: 'serie', titulo: 'S',
+	temporadas: [{ numero: 2, episodios: [{ id: 'e3', numero: 1, titulo: 'Uno', duracionSeg: 100 }] },
+		{ numero: 1, episodios: [{ id: 'e1', numero: 1, titulo: 'Piloto', duracionSeg: 2700 }, { id: 'e2', numero: 2, titulo: 'Dos', duracionSeg: 2580 }] }],
+};
+
+test('unidad: episodio de una serie con su duración', () => {
+	assert.deepEqual(unidad(serie, 'e2'), { texto: 'T1 · E2 · Dos', duracionSeg: 2580 });
+});
+test('unidad: película usa la duración de la ficha', () => {
+	assert.deepEqual(unidad({ tipo: 'pelicula', duracionSeg: 6000 }, 'x'), { texto: 'Película', duracionSeg: 6000 });
+});
+test('unidad: episodio desconocido usa 45 minutos', () => {
+	assert.deepEqual(unidad(serie, 'zz'), { texto: 'Episodio', duracionSeg: 2700 });
+});

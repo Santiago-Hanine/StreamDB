@@ -56,11 +56,15 @@ export function frase(motor, ops, cuerpo = {}) {
 
 function resultado({ status, cuerpo, traza }) {
 	const saga = traza?.saga;
-	if (status >= 400) {
+	if (status >= 400 || !status) {
 		const motivo = esc(cuerpo?.error ?? `Error ${status}`);
 		if (saga?.estado === 'compensada') return `<div class="resultado mal">✕ ${motivo}. La saga se compensó: los motores quedaron como antes.</div>`;
 		return `<div class="resultado mal">✕ ${motivo}</div>`;
 	}
+	const c = cuerpo ?? {};
+	if (c.checkpoint === 'guardado') return `<div class="resultado ok">✓ Reporte n.º ${c.reporte}: Redis guardó el segundo y, como tocaba checkpoint, también Cassandra</div>`;
+	if (c.checkpoint === 'no_corresponde') return `<div class="resultado ok">✓ Reporte n.º ${c.reporte}: solo Redis. Cassandra guarda un checkpoint cada 6 reportes (próximo: n.º ${Math.ceil(c.reporte / 6) * 6 || 6})</div>`;
+	if (c.checkpoint === 'fallido') return `<div class="resultado mal">Reporte n.º ${c.reporte}: Redis lo guardó, pero el checkpoint en Cassandra falló. El próximo lo corrige</div>`;
 	if (saga?.estado === 'completada') return `<div class="resultado ok">✓ Saga completada: ${saga.pasos.length} pasos, cada uno en su motor</div>`;
 	return `<div class="resultado ok">✓ Listo · ${traza?.ms ?? '?'} ms</div>`;
 }
