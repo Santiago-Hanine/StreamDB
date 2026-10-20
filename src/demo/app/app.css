@@ -239,3 +239,11 @@ details.detalle pre { white-space: pre-wrap; word-break: break-word; background:
 .paso-falla { border-radius: 8px; padding: 6px 12px; cursor: pointer; border: 2px solid transparent; font-weight: 600; }
 .paso-falla.armado { border-color: #fff; box-shadow: 0 0 0 3px var(--error); }
 .paso-falla.m-mongo, .paso-falla.m-cassandra { color: #000; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { cursor: pointer; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span { display: inline-block; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--borde); background: var(--superficie-2); font-size: 13px; }
+.chip input:checked + span { background: #fff; color: #000; border-color: #fff; font-weight: 600; }
+.chip input:focus-visible + span { outline: 2px solid var(--acento); }
+textarea.campo { background: var(--superficie-2); border: 1px solid var(--borde); border-radius: 6px; padding: 8px; }
+.formulario > label { align-self: start; padding-top: 6px; }

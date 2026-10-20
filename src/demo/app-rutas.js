@@ -127,6 +127,21 @@ router.get('/contenidos/:id', conTodo(async (req) => {
 	return { id: _id, ...resto };
 }));
 
+// ─── Series cargadas desde la demo (P1): las que tienen el prefijo del alta ───
+
+router.get('/altas', conTodo(async () => {
+	const d = await datosDemo();
+	const series = await db.collection('contenidos')
+		.find({ titulo: { $regex: `^${escaparRegex(d.prefijoAlta)}` } }, { projection: { titulo: 1, estado: 1, generos: 1, plataforma: 1, clasificacionEdad: 1, temporadas: 1 } })
+		.sort({ $natural: -1 }).limit(20).toArray(); // orden de inserción: la ficha no guarda fecha de alta
+	return {
+		series: series.map((c) => ({
+			id: c._id, titulo: c.titulo, estado: c.estado, generos: c.generos, plataforma: c.plataforma?.nombre,
+			clasificacionEdad: c.clasificacionEdad, episodios: c.temporadas?.reduce((n, t) => n + t.episodios.length, 0) ?? 0,
+		})),
+	};
+}));
+
 // ─── Catálogo para filtros y para el alta de P1 ───────────────────────────────
 
 router.get('/catalogo', conTodo(async () => {

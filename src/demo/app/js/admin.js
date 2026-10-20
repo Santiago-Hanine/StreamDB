@@ -14,17 +14,20 @@ let refresco = null; // setInterval de la pestaña de sesiones activas
 let demo = null;
 const datosDemo = async () => (demo ??= await leer('/demo/api/datos'));
 
-// Cuerpo del alta (P1): segunda temporada inventada de la serie demo, con sus géneros, plataforma y elenco
-export function cuerpoAlta(d, { titulo, episodios }) {
+const EDADES = [0, 7, 13, 16, 18]; // las que acepta P1
+const TIPOS_VINCULO = { secuela: 'Secuela de', precuela: 'Precuela de', mismo_universo: 'Mismo universo que', similar: 'Similar a' };
+
+// Cuerpo del alta (P1) con lo elegido en el formulario. El título lleva el prefijo para que "Reiniciar demo" la borre
+export function cuerpoAlta(d, { titulo, episodios, generos, idPlataforma, clasificacionEdad, anioEstreno, actores, vinculo }) {
 	const limpio = titulo.trim().startsWith(d.prefijoAlta) ? titulo.trim() : d.prefijoAlta + titulo.trim();
 	return {
 		titulo: limpio,
-		clasificacionEdad: 13,
-		anioEstreno: 2026,
-		generos: d.serie.generos.slice(0, 2),
-		idPlataforma: d.serie.idPlataforma,
-		elenco: d.serie.elenco.map((a, i) => ({ idActor: a.idActor, personaje: i ? 'Antagonista' : 'Protagonista' })),
-		vinculos: [{ idContenido: d.serie.id, tipo: 'secuela' }],
+		clasificacionEdad: Number(clasificacionEdad),
+		anioEstreno: Number(anioEstreno),
+		generos,
+		idPlataforma,
+		elenco: actores.map((idActor, i) => ({ idActor, personaje: i ? 'Reparto' : 'Protagonista' })),
+		vinculos: vinculo?.idContenido ? [{ idContenido: vinculo.idContenido, tipo: vinculo.tipo }] : [],
 		temporadas: [{ numero: 1, episodios: episodios.map((e) => e.trim()).filter(Boolean).map((t) => ({ titulo: t, duracionSeg: DURACION_EPISODIO })) }],
 	};
 }
@@ -49,37 +52,86 @@ const encabezado = (titulo, motores, texto) => `<div class="panel" style="backgr
 
 // ─── Catálogo (P1) ────────────────────────────────────────────────────────────
 
-registrar('admin/catalogo', async (vista) => {
-	const d = await datosDemo();
-	vista.innerHTML = `${encabezado('Catálogo', ['mongo', 'neo4j'], 'Dar de alta una serie es una saga: la ficha y los episodios en MongoDB, el nodo, el elenco y los vínculos en Neo4j, y al final se publica. Si un paso falla, se deshace lo anterior en orden inverso.')}
+const chips = (nombre, items, elegidos) => `<div class="chips">${items.map((x) => `<label class="chip">
+	<input type="checkbox" name="${nombre}" value="${esc(x.id)}" ${elegidos.includes(x.id) ? 'checked' : ''}><span>${esc(x.nombre)}</span></label>`).join('')}</div>`;
+const opciones = (items, elegido) => items.map((x) => `<option value="${esc(x.id)}" ${x.id === elegido ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
+const tituloSugerido = () => `${new Date().toLocaleTimeString('es-AR')} · El regreso del faro`;
+
+registrar('admin/catalogo', async (vista, params, sigue) => {
+	let d, catalogo, contenidos;
+	try {
+		[d, catalogo, contenidos] = await Promise.all([
+			datosDemo(),
+			leer('/demo/api/app/catalogo'),
+			leer(`${API}/contenidos?limite=15`).then((r) => r.contenidos).catch(() => []),
+		]);
+	} catch (e) {
+		vista.innerHTML = `<p class="error-texto">No se pudo cargar el catálogo: ${esc(e.message)}</p>`;
+		return;
+	}
+	if (!sigue()) return;
+
+	// Valores precargados: los de la serie demo, así se puede dar de alta con un solo clic
+	const actores = [...d.serie.elenco.map((a) => ({ id: a.idActor, nombre: a.nombre })),
+		...catalogo.actores.filter((a) => !d.serie.elenco.some((e) => e.idActor === a.id))];
+	const destinos = [{ id: d.serie.id, nombre: d.serie.titulo },
+		...contenidos.filter((c) => c._id !== d.serie.id && !c.titulo.startsWith(d.prefijoAlta)).map((c) => ({ id: c._id, nombre: c.titulo }))];
+
+	vista.innerHTML = `${encabezado('Catálogo', ['mongo', 'neo4j'], 'Dar de alta una serie es una saga: la ficha y los episodios en MongoDB, el nodo, el elenco y los vínculos en Neo4j, y al final se publica. Antes de empezar, la API valida que los géneros, la plataforma, los actores y el contenido vinculado existan: si algo no está, no se escribe nada. Si un paso de la saga falla, se deshace lo anterior en orden inverso.')}
 		<div class="panel"><h2>Nueva serie</h2>
 			<div class="formulario">
-				<label for="titulo">Título</label><input type="text" id="titulo" value="${esc(new Date().toLocaleTimeString('es-AR'))} · El regreso del faro">
-				<label>Se copia de</label><span class="suave">«${esc(d.serie.titulo)}»: géneros ${esc(d.serie.generos.slice(0, 2).join(', '))}, plataforma ${esc(d.serie.plataforma)},
-					elenco ${esc(d.serie.elenco.map((a) => a.nombre).join(' y '))}. Queda vinculada como su <b>secuela</b>.</span>
-				<label for="episodios">Episodios (uno por línea)</label><textarea id="episodios" rows="3" class="campo" style="background:var(--superficie-2);border:1px solid var(--borde);border-radius:6px;padding:8px;color:inherit">Piloto\nLa tormenta</textarea>
+				<label for="titulo">Título</label><input type="text" id="titulo" value="${esc(tituloSugerido())}">
+				<label>Géneros ${pildora('neo4j')}</label>${chips('genero', catalogo.generos.map((g) => ({ id: g, nombre: g })), d.serie.generos.slice(0, 2))}
+				<label for="plataforma">Plataforma ${pildora('mongo')}</label><select class="campo" id="plataforma">${opciones(catalogo.plataformas, d.serie.idPlataforma)}</select>
+				<label for="edad">Clasificación</label><select class="campo" id="edad">${opciones(EDADES.map((e) => ({ id: String(e), nombre: e ? `+${e}` : 'Apta para todo público' })), '13')}</select>
+				<label for="anio">Año de estreno</label><input type="number" id="anio" min="1888" max="2100" value="2026">
+				<label>Elenco ${pildora('neo4j')}</label>${chips('actor', actores, d.serie.elenco.map((a) => a.idActor))}
+				<label for="vinculo-tipo">Vínculo ${pildora('neo4j')}</label>
+				<div class="filtros" style="margin:0">
+					<select class="campo" id="vinculo-tipo"><option value="">Sin vínculo</option>${opciones(Object.entries(TIPOS_VINCULO).map(([id, nombre]) => ({ id, nombre })), 'secuela')}</select>
+					<select class="campo" id="vinculo-destino" style="flex:1">${opciones(destinos, d.serie.id)}</select>
+				</div>
+				<label for="episodios">Episodios (uno por línea)</label><textarea id="episodios" rows="3" class="campo">Piloto\nLa tormenta</textarea>
 			</div>
-			<p class="suave">El título lleva el prefijo «${esc(d.prefijoAlta)}» para que «Reiniciar demo» la borre.</p>
+			<p class="suave">El título lleva el prefijo «${esc(d.prefijoAlta)}» para que «Reiniciar demo» la borre. Las listas salen de las bases, así que no se puede elegir algo que no exista.</p>
 			<button class="boton rojo" id="cargar">Cargar serie</button>
 		</div>
 		<div class="panel"><h2>Series cargadas desde la demo</h2><div id="cargadas"><p class="vacio">Cargando…</p></div></div>`;
 
+	const tipo = vista.querySelector('#vinculo-tipo');
+	const destino = vista.querySelector('#vinculo-destino');
+	tipo.onchange = () => { destino.disabled = !tipo.value; };
+
 	const listar = async () => {
-		// P7 por la plataforma y el género de la serie demo: ahí aparecen las publicadas
-		const r = await leer(`${API}/contenidos?idPlataforma=${d.serie.idPlataforma}&genero=${encodeURIComponent(d.serie.generos[0])}&limite=50`).catch(() => null);
-		const altas = (r?.contenidos ?? []).filter((c) => c.titulo.startsWith(d.prefijoAlta));
-		vista.querySelector('#cargadas').innerHTML = altas.length
-			? `<table class="tabla">${altas.map((c) => `<tr><td><b>${esc(c.titulo)}</b></td><td class="suave">${c.cantidadEpisodios} episodios</td>
-				<td class="suave">${esc(c.vinculados.map((v) => `${v.relacion} de ${v.titulo}`).join(', '))}</td></tr>`).join('')}</table>`
+		const r = await leer('/demo/api/app/altas').catch(() => null);
+		if (!sigue()) return;
+		vista.querySelector('#cargadas').innerHTML = r?.series.length
+			? `<table class="tabla"><tr><th>Título</th><th>Géneros</th><th>Plataforma</th><th>Episodios</th><th>Estado</th></tr>
+				${r.series.map((c) => `<tr><td><b>${esc(c.titulo)}</b></td><td class="suave">${esc(c.generos.join(', '))}</td><td class="suave">${esc(c.plataforma)}</td>
+				<td>${c.episodios}</td><td>${esc(c.estado)}</td></tr>`).join('')}</table>`
 			: '<p class="vacio">Todavía no se cargó ninguna (o la última falló y se deshizo).</p>';
 	};
 	vista.querySelector('#cargar').onclick = async (e) => {
+		const marcados = (nombre) => [...vista.querySelectorAll(`input[name=${nombre}]:checked`)].map((x) => x.value);
+		const body = cuerpoAlta(d, {
+			titulo: vista.querySelector('#titulo').value,
+			episodios: vista.querySelector('#episodios').value.split('\n'),
+			generos: marcados('genero'),
+			idPlataforma: vista.querySelector('#plataforma').value,
+			clasificacionEdad: vista.querySelector('#edad').value,
+			anioEstreno: vista.querySelector('#anio').value,
+			actores: marcados('actor'),
+			vinculo: tipo.value ? { idContenido: destino.value, tipo: tipo.value } : null,
+		});
 		e.target.disabled = true;
-		const body = cuerpoAlta(d, { titulo: vista.querySelector('#titulo').value, episodios: vista.querySelector('#episodios').value.split('\n') });
 		const r = await pedir({ metodo: 'POST', ruta: `${API}/contenidos/series`, body, accion: 'Alta de serie', pasos: Object.keys(PASOS.P1) });
 		e.target.disabled = false;
-		if (r.status === 201) aviso(`Serie publicada: ${body.titulo}`);
-		vista.querySelector('#titulo').value = `${new Date().toLocaleTimeString('es-AR')} · El regreso del faro`;
+		if (r.status === 201) {
+			aviso(`Serie publicada: ${body.titulo}`);
+			vista.querySelector('#titulo').value = tituloSugerido();
+		} else if (r.status === 400) {
+			aviso(`La API rechazó el alta antes de escribir: ${[].concat(r.cuerpo?.detalle ?? r.cuerpo?.error).join(' · ')}`, 'error');
+		}
 		await listar();
 	};
 	await listar();

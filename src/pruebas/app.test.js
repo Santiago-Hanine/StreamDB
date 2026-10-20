@@ -78,6 +78,12 @@ test('contenido: id inválido responde 400', async () => {
 	assert.equal(r.status, 400);
 });
 
+test('altas: lista las series cargadas desde la demo (prefijo del título)', async () => {
+	const { series } = await get('/demo/api/app/altas');
+	assert.ok(Array.isArray(series));
+	for (const x of series) assert.match(x.titulo, /^Demo P1 · /);
+});
+
 // ─── Frases de la columna de motores (lógica pura del frontend) ───────────────
 
 const { frase } = await import('../demo/app/js/motores.js');
@@ -150,23 +156,28 @@ test('rangoMeses: cruza el año', () => {
 // ─── Admin: cuerpo del alta de serie (P1) ─────────────────────────────────────
 
 const { cuerpoAlta } = await import('../demo/app/js/admin.js');
-const demoP1 = {
-	prefijoAlta: 'Demo P1 · ',
-	serie: { id: 's1', generos: ['Drama', 'Suspenso', 'Acción'], idPlataforma: 'p1', elenco: [{ idActor: 'a1' }, { idActor: 'a2' }] },
+const formP1 = {
+	titulo: 'Mi serie', episodios: ['Piloto', 'La tormenta'],
+	generos: ['Drama', 'Suspenso'], idPlataforma: 'p1', clasificacionEdad: '16', anioEstreno: '2025',
+	actores: ['a1', 'a2'], vinculo: { idContenido: 's1', tipo: 'mismo_universo' },
 };
+const prefijo = { prefijoAlta: 'Demo P1 · ' };
 
-test('cuerpoAlta: arma la serie con el prefijo, 2 géneros, elenco y vínculo con la serie demo', () => {
-	const c = cuerpoAlta(demoP1, { titulo: 'Mi serie', episodios: ['Piloto', 'La tormenta'] });
+test('cuerpoAlta: usa lo elegido en el formulario', () => {
+	const c = cuerpoAlta(prefijo, formP1);
 	assert.equal(c.titulo, 'Demo P1 · Mi serie');
 	assert.deepEqual(c.generos, ['Drama', 'Suspenso']);
 	assert.equal(c.idPlataforma, 'p1');
-	assert.deepEqual(c.elenco.map((a) => a.idActor), ['a1', 'a2']);
-	assert.deepEqual(c.vinculos, [{ idContenido: 's1', tipo: 'secuela' }]);
+	assert.equal(c.clasificacionEdad, 16);
+	assert.equal(c.anioEstreno, 2025);
+	assert.deepEqual(c.elenco, [{ idActor: 'a1', personaje: 'Protagonista' }, { idActor: 'a2', personaje: 'Reparto' }]);
+	assert.deepEqual(c.vinculos, [{ idContenido: 's1', tipo: 'mismo_universo' }]);
 	assert.deepEqual(c.temporadas, [{ numero: 1, episodios: [{ titulo: 'Piloto', duracionSeg: 2700 }, { titulo: 'La tormenta', duracionSeg: 2700 }] }]);
 });
-test('cuerpoAlta: no duplica el prefijo y descarta episodios vacíos', () => {
-	const c = cuerpoAlta(demoP1, { titulo: 'Demo P1 · Otra', episodios: ['Uno', '  ', ''] });
+test('cuerpoAlta: sin vínculo, no duplica el prefijo y descarta episodios vacíos', () => {
+	const c = cuerpoAlta(prefijo, { ...formP1, titulo: 'Demo P1 · Otra', episodios: ['Uno', '  ', ''], vinculo: null });
 	assert.equal(c.titulo, 'Demo P1 · Otra');
+	assert.deepEqual(c.vinculos, []);
 	assert.equal(c.temporadas[0].episodios.length, 1);
 });
 
