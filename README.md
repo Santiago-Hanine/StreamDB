@@ -86,9 +86,40 @@ Al terminar:
 docker compose stop    # apaga las bases y conserva los datos
 ```
 
+## App de demo
+
+Con la API levantada, abrí **http://localhost:4000/app** (o el `PORT` de tu `.env`). Es una app de streaming que se usa como un usuario real: cada clic ejecuta uno de los problemas contra los cinco motores, y la columna de la derecha, **«Qué pasó con tu último clic»**, enciende las bases que intervinieron con una frase por cada una, la saga (si hubo) y, desplegable, cada operación exacta en orden.
+
+Al entrar se elige **usuario** o **admin**. Como usuario se elige la cuenta (la demo u otras del seed, con buscador por email), el perfil y el dispositivo; los dos últimos se pueden cambiar en cualquier momento desde la barra.
+
+| Acción en la app | Problema | Motores |
+|---|---|---|
+| ▶ Reproducir / Continuar | P2 inicio de reproducción y cupo | Mongo, Redis, Cassandra |
+| La barra avanza (tiempo ×30), ⏸ Pausa, ✕ Salir | P3 progreso y continuar viendo | Redis, y Cassandra cada 6 reportes |
+| Terminar el episodio o «Saltar al final» | P4 fin de episodio | Cassandra, Redis, Neo4j |
+| Fila «Porque viste…» del inicio | P5 recomendaciones | Mongo, Redis, Neo4j |
+| Tercer dispositivo sin lugar, «Cerrar sesión en todos lados», sesión que expira | P2 y P6 sesiones | Redis, Cassandra |
+| Explorar con filtros de género, actor y plataforma | P7 exploración | Mongo, Neo4j, Redis |
+| Mi actividad | P3 historial | Cassandra |
+| Admin → Catálogo: cargar una serie | P1 alta de serie | Mongo, Neo4j |
+| Admin → Licencias: retirar, procesar vencimientos, trazabilidad | P8 retiro y trazabilidad | PostgreSQL, Redis, Neo4j, Mongo (Cassandra en la trazabilidad) |
+| Admin → Sesiones activas: cerrar o forzar la expiración | P6 | Redis, Cassandra |
+| Admin → Fallas: elegir el paso donde falla la próxima acción | Sagas de P1, P2, P4 y P8 | El del paso, y la compensación en orden inverso |
+
+Detalles para la presentación:
+
+- «El faro del norte» tiene una licencia vigente hasta el 2027-03-01: para retirarla, en Admin → Licencias poné una **fecha de referencia** posterior. Con la fecha del seed (2026-10-17), «Procesar vencimientos» retira los contenidos que ya no tienen licencia.
+- Sesiones desde una sola pestaña: ▶ en la TV, cambiá el dispositivo en la barra a Móvil y ▶ de nuevo (la TV sigue ocupando su lugar), y en un tercero ▶ da el 409 de cupo lleno. Si navegás con algo reproduciéndose, el reproductor se minimiza y sigue reportando (botón rojo «▶ … · volver» en la barra): así se ve en Admin → Sesiones activas, y con «Forzar expiración» y «volver» se ve el 410.
+- Una falla armada solo se gasta si la saga llega a ese paso: un rechazo previo (licencia vigente, perfil no apto, cupo lleno) la deja armada.
+- El perfil Niños (+7) no ve contenido +16; si intenta reproducir «El faro del norte», la API lo rechaza y la columna lo muestra.
+- **Reiniciar demo** (barra del admin) cierra las sesiones de la cuenta demo, vuelve a publicar lo retirado y borra las series cargadas desde la app o el panel.
+- `npm run prueba:app` prueba las rutas auxiliares de la app (`/demo/api/app/*`) y su lógica, con la API levantada y el seed cargado.
+
+El código está en `src/demo/app/` (HTML, CSS y módulos de JavaScript, sin build) y `src/demo/app-rutas.js`. Nodemon ignora `src/demo/app/` y `src/pruebas/`, así que editar la app no reinicia la API.
+
 ## Panel de demo
 
-Con la API levantada, abrí **http://localhost:4000/demo**. Desde ahí se ejecuta cada problema y cada falla por separado, con los datos fijos del seed, sin armar pedidos a mano.
+El panel técnico sigue disponible en **http://localhost:4000/demo**. Desde ahí se ejecuta cada problema y cada falla por separado, con los datos fijos del seed, sin armar pedidos a mano.
 
 - **Escenarios:** por problema, el caso normal, casos borde (cupo lleno, perfil no apto, licencia vigente) y un botón por cada paso de la saga para provocar la falla ahí (`?fallarEn=`).
 - **Traza:** cada consulta que hizo el pedido, en orden, con su motor, la operación y cuánto tardó. Muestra lo que corre en paralelo (P7, trazabilidad de P8), el log de la saga en Mongo y lo que hacen los procesos de fondo (el listener de expiraciones de P6).

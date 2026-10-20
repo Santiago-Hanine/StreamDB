@@ -19,7 +19,11 @@
 		"seed:redis": "node src/seed/redis.js",
 		"seed": "npm run seed:mongo && npm run seed:neo4j && npm run seed:cassandra && npm run seed:postgres && npm run seed:redis",
 		"prueba:saga": "node src/pruebas/saga.js",
-		"prueba:concurrencia": "node src/pruebas/concurrencia.js"
+		"prueba:concurrencia": "node src/pruebas/concurrencia.js",
+		"prueba:app": "node --test src/pruebas/app.test.js"
+	},
+	"nodemonConfig": {
+		"ignore": ["src/demo/app/*", "src/pruebas/*"]
 	},
 	"keywords": [],
 	"author": "",

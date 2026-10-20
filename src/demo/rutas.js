@@ -22,7 +22,7 @@ router.get('/', (req, res) => res.sendFile(PANEL));
 // ─── Datos de ejemplo (los fijos del seed) ────────────────────────────────────
 
 let cache = null;
-async function datosDemo() {
+export async function datosDemo() {
 	if (cache) return cache;
 	const contenidos = db.collection('contenidos');
 	const [cuenta, serie, pelicula, dispositivos, [vencido]] = await Promise.all([
