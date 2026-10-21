@@ -1,4 +1,4 @@
-// Estado de la app: quién entró y desde dónde. Se recuerda entre recargas (salvo la sesión de reproducción).
+// Estado de la app. Se guarda en localStorage salvo la sesión de reproducción.
 const CLAVE = 'streamdb-app';
 
 export const estado = {
@@ -6,9 +6,9 @@ export const estado = {
 	cuenta: null,       // { id, email, limiteSesiones, perfiles }
 	perfil: null,       // { id, nombre, clasificacionEdad }
 	dispositivo: null,  // { id, tipo, modelo, sistemaOperativo }
-	dispositivos: [],   // los que se pueden elegir
-	sesion: null,       // reproducción en curso (no se guarda)
-	conservarColumna: false, // la próxima vista no pisa la columna de motores (no se guarda)
+	dispositivos: [],
+	sesion: null, // reproducción en curso
+	conservarColumna: false, // la próxima vista no pisa la columna de motores
 };
 
 export function guardar() {

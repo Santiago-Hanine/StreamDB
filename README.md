@@ -113,9 +113,25 @@ Detalles para la presentación:
 - Una falla armada solo se gasta si la saga llega a ese paso: un rechazo previo (licencia vigente, perfil no apto, cupo lleno) la deja armada.
 - El perfil Niños (+7) no ve contenido +16; si intenta reproducir «El faro del norte», la API lo rechaza y la columna lo muestra.
 - **Reiniciar demo** (barra del admin) cierra las sesiones de la cuenta demo, vuelve a publicar lo retirado y borra las series cargadas desde la app o el panel.
-- `npm run prueba:app` prueba las rutas auxiliares de la app (`/demo/api/app/*`) y su lógica, con la API levantada y el seed cargado.
+- `npm run prueba:app` prueba las rutas auxiliares de la app (`/demo/api/app/*`), la consola y su lógica, con la API levantada, los contenedores corriendo y el seed cargado.
 
-El código está en `src/demo/app/` (HTML, CSS y módulos de JavaScript, sin build) y `src/demo/app-rutas.js`. Nodemon ignora `src/demo/app/` y `src/pruebas/`, así que editar la app no reinicia la API.
+### Consola de motores
+
+**Consola** (en la barra, o `/app#/consola`) tiene una pestaña por motor y cada una funciona como una terminal: los comandos se escriben con la sintaxis de cada shell y la salida se ve igual que en ella. Enter ejecuta, Shift+Enter agrega una línea, ↑↓ recorren el historial de esa pestaña y Ctrl+L limpia.
+
+| Pestaña | Qué corre | Ejemplo |
+|---|---|---|
+| MongoDB | `mongosh` en el contenedor `mongo`, base `streamdb` | `show collections`, `db.contenidos.findOne()` |
+| Cassandra | `cqlsh` en el contenedor `cassandra`, keyspace `streamdb` | `DESCRIBE TABLES`, `TRACING ON` |
+| Neo4j | Cypher por el driver, con la salida de `cypher-shell` (también `EXPLAIN` y `PROFILE`) | `MATCH (g:Genero) RETURN g LIMIT 5` |
+| Redis | `redis-cli` en el contenedor `redis` | `SCAN 0 COUNT 10`, `HGETALL <clave>` |
+| PostgreSQL | `psql` en el contenedor `postgres`, base `streamdb` | `\dt`, `\d licencia` |
+
+- Cada shell se abre con `docker compose exec` la primera vez que se usa y queda abierta, así guarda el estado entre comandos (`use`, variables de mongosh, `BEGIN … COMMIT`). Si un comando tarda más de 20 s (un `SUBSCRIBE`, una comilla sin cerrar) se corta y la shell se reinicia; también se puede reiniciar con el botón.
+- Neo4j no usa `cypher-shell` porque sin una terminal no ejecuta nada hasta que se le cierra la entrada: los comandos con `:` (`:param`, `:begin`) no están disponibles.
+- Se puede correr cualquier comando, también los que modifican datos (**Reiniciar demo** o el seed los vuelven atrás). Solo responde a pedidos desde la misma máquina.
+
+El código está en `src/demo/app/` (HTML, CSS y módulos de JavaScript, sin build), `src/demo/app-rutas.js` y `src/demo/consola.js` (las shells de la consola). Nodemon ignora `src/demo/app/` y `src/pruebas/`, así que editar la app no reinicia la API.
 
 ## Panel de demo
 

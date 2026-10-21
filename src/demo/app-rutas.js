@@ -1,6 +1,5 @@
-// Rutas auxiliares de la app de demo (/app): lo que la app necesita mostrar y la API no tiene
-// (cuentas para elegir, dispositivos, estado de los motores, licencias, catálogo para los filtros).
-// Son consultas internas: van sin traza, así la columna de motores muestra solo los ejercicios.
+// Rutas auxiliares de la app de demo: lo que la app necesita mostrar y la API no tiene.
+// Van sin traza para que la columna de motores muestre solo los problemas.
 import { Router } from 'express';
 import db from '../db/mongo.js';
 import { cypher } from '../db/neo4j.js';
@@ -15,17 +14,15 @@ import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
 
 const router = Router();
 
-const CUENTAS_EXTRA = 4;  // además de la demo, para elegir
+const CUENTAS_EXTRA = 4; // además de la demo
 const MAX_BUSQUEDA = 10;
 const LICENCIAS_EXTRA = 8;
 const ACTORES = 12;
 const TIPOS_DISPOSITIVO = ['tv', 'movil', 'web', 'consola', 'tablet'];
-const PING_MS = 1500; // un motor caído no responde nunca (Redis encola los comandos): se lo da por caído
+const PING_MS = 1500; // Redis encola los comandos si está caído: se corta antes
 
 const escaparRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const conTodo = (fn) => async (req, res) => res.json(await sinTraza(() => fn(req)));
-
-// ─── Estado de conexión de cada motor ─────────────────────────────────────────
 
 router.get('/motores', conTodo(async () => {
 	const pings = {
@@ -39,8 +36,6 @@ router.get('/motores', conTodo(async () => {
 	const resultados = await Promise.allSettled(nombres.map((m) => conLimite(pings[m](), PING_MS)));
 	return Object.fromEntries(nombres.map((m, i) => [m, resultados[i].status === 'fulfilled']));
 }));
-
-// ─── Cuentas para elegir ──────────────────────────────────────────────────────
 
 const PROYECCION_CUENTA = { email: 1, limiteSesiones: 1, perfiles: 1 };
 const cuentaPublica = (c) => ({
@@ -58,7 +53,7 @@ router.get('/cuentas', conTodo(async (req) => {
 		return { cuentas: encontradas.map(cuentaPublica) };
 	}
 	const demo = await cuentas.findOne({ email: 'demo@streamdb.test' }, { projection: PROYECCION_CUENTA });
-	// Una cuenta por cada límite de sesiones distinto, para mostrar cupos diferentes
+	// Una cuenta por cada límite de sesiones, para mostrar cupos distintos
 	const otras = [];
 	const limites = new Set();
 	for await (const c of cuentas.find({ estado: 'activa', _id: { $ne: demo?._id } }, { projection: PROYECCION_CUENTA }).sort({ _id: 1 }).limit(200)) {
@@ -70,7 +65,7 @@ router.get('/cuentas', conTodo(async (req) => {
 	return { cuentas: [demo, ...otras].filter(Boolean).map(cuentaPublica) };
 }));
 
-// ─── Dispositivos (el seed no los asocia a cuentas: uno de cada tipo) ─────────
+// El seed no asocia dispositivos a cuentas: uno de cada tipo
 
 router.get('/dispositivos', conTodo(async () => {
 	const dispositivos = await Promise.all(TIPOS_DISPOSITIVO.map((tipo) => db.collection('dispositivos')
@@ -79,8 +74,6 @@ router.get('/dispositivos', conTodo(async () => {
 		dispositivos: dispositivos.filter(Boolean).map((d) => ({ id: d._id, tipo: d.tipo, modelo: d.modelo, sistemaOperativo: d.sistemaOperativo })),
 	};
 }));
-
-// ─── Contenidos con sus licencias (P8) ────────────────────────────────────────
 
 const LICENCIAS = `SELECT id_licencia, id_contenido, region, lower(vigencia) AS desde, upper(vigencia) AS hasta, estado
                    FROM licencia WHERE id_contenido = ANY($1::uuid[]) ORDER BY region, lower(vigencia)`;
@@ -115,8 +108,6 @@ router.get('/licencias', conTodo(async (req) => {
 	return { contenidos: await conLicencias([...fijos, ...otros.map((f) => f.id_contenido)]) };
 }));
 
-// ─── Ficha de un contenido (para el detalle y la duración en el reproductor) ──
-
 router.get('/contenidos/:id', conTodo(async (req) => {
 	if (!esId(req.params.id)) throw pedidoInvalido('id no es un id válido');
 	const c = await db.collection('contenidos').findOne({ _id: req.params.id }, {
@@ -127,13 +118,11 @@ router.get('/contenidos/:id', conTodo(async (req) => {
 	return { id: _id, ...resto };
 }));
 
-// ─── Series cargadas desde la demo (P1): las que tienen el prefijo del alta ───
-
 router.get('/altas', conTodo(async () => {
 	const d = await datosDemo();
 	const series = await db.collection('contenidos')
 		.find({ titulo: { $regex: `^${escaparRegex(d.prefijoAlta)}` } }, { projection: { titulo: 1, estado: 1, generos: 1, plataforma: 1, clasificacionEdad: 1, temporadas: 1 } })
-		.sort({ $natural: -1 }).limit(20).toArray(); // orden de inserción: la ficha no guarda fecha de alta
+		.sort({ $natural: -1 }).limit(20).toArray(); // la ficha no guarda fecha de alta
 	return {
 		series: series.map((c) => ({
 			id: c._id, titulo: c.titulo, estado: c.estado, generos: c.generos, plataforma: c.plataforma?.nombre,
@@ -141,8 +130,6 @@ router.get('/altas', conTodo(async () => {
 		})),
 	};
 }));
-
-// ─── Catálogo para filtros y para el alta de P1 ───────────────────────────────
 
 router.get('/catalogo', conTodo(async () => {
 	const [generos, actores, plataformas] = await Promise.all([

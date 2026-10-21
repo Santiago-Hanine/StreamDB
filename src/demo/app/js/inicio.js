@@ -1,12 +1,10 @@
-// Pantallas de entrada: usuario o admin, elegir cuenta, perfil y dispositivo.
+// Inicio: usuario o admin, cuenta, perfil y dispositivo.
 import { registrar, ir, icono } from './router.js';
 import { estado, guardar } from './estado.js';
 import { leer } from './api.js';
 import { esc, MOTORES, aviso } from './util.js';
 
 const COLORES_PERFIL = ['#e50914', '#4c8eda', '#3ecf6e', '#f0b429', '#a970ff', '#ff7ab6'];
-
-// ─── Inicio ───────────────────────────────────────────────────────────────────
 
 registrar('inicio', async (vista) => {
 	vista.innerHTML = `<div class="centro">
@@ -33,8 +31,6 @@ registrar('inicio', async (vista) => {
 		vista.querySelector('#estado-motores').innerHTML = '<span class="off">La API no responde</span>';
 	}
 });
-
-// ─── Elegir cuenta ────────────────────────────────────────────────────────────
 
 const filaCuenta = (c) => `<div class="fila-cuenta" data-id="${c.id}">
 	<span><b>${esc(c.email)}</b> <span class="suave">· ${c.perfiles.length} perfil${c.perfiles.length === 1 ? '' : 'es'}</span></span>
@@ -74,8 +70,6 @@ registrar('cuentas', async (vista) => {
 	await mostrar();
 });
 
-// ─── ¿Quién está mirando? y ¿desde qué dispositivo? ───────────────────────────
-
 registrar('quien', async (vista) => {
 	if (!estado.cuenta) return ir('cuentas');
 	const perfiles = estado.cuenta.perfiles.map((p, i) => `<div class="perfil ${estado.perfil?.id === p.id ? 'elegido' : ''}" data-id="${p.id}">
@@ -104,7 +98,6 @@ registrar('quien', async (vista) => {
 	try {
 		const [{ dispositivos }, sesiones] = await Promise.all([
 			leer('/demo/api/app/dispositivos'),
-			// Si no se pueden leer las sesiones, igual se puede elegir dispositivo
 			leer(`/api/v1/cuentas/${estado.cuenta.id}/sesiones`).catch(() => null),
 		]);
 		estado.dispositivos = dispositivos;

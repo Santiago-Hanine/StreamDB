@@ -1,5 +1,4 @@
-// Pruebas de las rutas de la app de demo (/app y /demo/api/app/*).
-// Corren contra el servidor levantado (npm run dev) y con los datos del seed.
+// Pruebas de la app de demo. Necesitan el servidor levantado (npm run dev) y el seed cargado.
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,8 +83,6 @@ test('altas: lista las series cargadas desde la demo (prefijo del título)', asy
 	for (const x of series) assert.match(x.titulo, /^Demo P1 · /);
 });
 
-// ─── Frases de la columna de motores (lógica pura del frontend) ───────────────
-
 const { frase } = await import('../demo/app/js/motores.js');
 const op = (motor, op, detalle = '') => ({ motor, op, detalle });
 
@@ -123,8 +120,6 @@ test('frase: Mongo actualiza el catálogo', () => {
 	assert.equal(frase('mongo', [op('mongo', 'update', 'contenidos · filtro {}')], {}), 'Actualizó el catálogo');
 });
 
-// ─── Reproductor: qué unidad se está viendo y cuánto dura ─────────────────────
-
 const { unidad } = await import('../demo/app/js/player.js');
 const serie = {
 	tipo: 'serie', titulo: 'S',
@@ -142,8 +137,6 @@ test('unidad: episodio desconocido usa 45 minutos', () => {
 	assert.deepEqual(unidad(serie, 'zz'), { texto: 'Episodio', duracionSeg: 2700 });
 });
 
-// ─── Mi actividad: período de los últimos meses (AAAA-MM) ─────────────────────
-
 const { rangoMeses } = await import('../demo/app/js/usuario.js');
 
 test('rangoMeses: tres meses hasta el actual', () => {
@@ -152,8 +145,6 @@ test('rangoMeses: tres meses hasta el actual', () => {
 test('rangoMeses: cruza el año', () => {
 	assert.deepEqual(rangoMeses(new Date('2026-02-10T12:00:00Z'), 3), { desde: '2025-12', hasta: '2026-02' });
 });
-
-// ─── Admin: cuerpo del alta de serie (P1) ─────────────────────────────────────
 
 const { cuerpoAlta } = await import('../demo/app/js/admin.js');
 const formP1 = {
@@ -180,8 +171,6 @@ test('cuerpoAlta: sin vínculo, no duplica el prefijo y descarta episodios vací
 	assert.deepEqual(c.vinculos, []);
 	assert.equal(c.temporadas[0].episodios.length, 1);
 });
-
-// ─── Correcciones de la revisión final ────────────────────────────────────────
 
 const player = await import('../demo/app/js/player.js');
 const api = await import('../demo/app/js/api.js');
@@ -217,4 +206,72 @@ test('router: un render viejo deja de ser vigente cuando empieza otro', () => {
 test('conLimite: devuelve el valor o falla si tarda demasiado', async () => {
 	assert.equal(await conLimite(Promise.resolve(7), 50), 7);
 	await assert.rejects(conLimite(new Promise(() => {}), 50), /tardó más de 50 ms/);
+});
+
+const consola = async (motor, comando) => {
+	const r = await fetch(`${base}/demo/api/consola/${motor}`, {
+		method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comando }),
+	});
+	assert.equal(r.status, 200, `${motor} respondió ${r.status}`);
+	return r.json();
+};
+
+test('consola: mongosh con sus comandos propios y estado entre comandos', async () => {
+	assert.match((await consola('mongo', 'show collections')).salida, /contenidos/);
+	assert.equal((await consola('mongo', 'const n = db.contenidos.countDocuments()')).error, false);
+	assert.ok(Number((await consola('mongo', 'n')).salida) > 0);
+	const mal = await consola('mongo', 'db.nada.foo()');
+	assert.ok(mal.error && /TypeError/.test(mal.salida));
+});
+
+test('consola: mongo avisa al instante si el comando está incompleto', async () => {
+	const r = await consola('mongo', 'db.contenidos.find({ tipo: "serie"');
+	assert.ok(r.error && /incompleto/.test(r.salida));
+	assert.equal((await consola('mongo', 'db.getName()')).salida, 'streamdb');
+});
+
+test('consola: cqlsh con DESCRIBE y errores marcados', async () => {
+	assert.match((await consola('cassandra', 'DESCRIBE TABLES')).salida, /sesiones_por_cuenta/);
+	const mal = await consola('cassandra', 'SELECT * FROM no_existe');
+	assert.ok(mal.error && /no_existe does not exist/.test(mal.salida) && !/<stdin>/.test(mal.salida));
+});
+
+test('consola: Neo4j con el formato de cypher-shell y varias sentencias', async () => {
+	const r = await consola('neo4j', 'MATCH (g:Genero) RETURN g ORDER BY g.nombre LIMIT 1; RETURN 1 AS uno');
+	assert.match(r.salida, /\| \(:Genero \{nombre: ".+"\}\) +\|/);
+	assert.match(r.salida, /\| uno \|\n\+-----\+\n\| 1 {3}\|/);
+	assert.ok((await consola('neo4j', ':param x => 1')).error);
+});
+
+test('consola: redis-cli y psql con su formato', async () => {
+	assert.match((await consola('redis', 'DBSIZE')).salida, /^\(integer\) \d+$/);
+	assert.ok((await consola('redis', 'NOEXISTE')).error);
+	assert.match((await consola('postgres', '\\dt')).salida, /licencia/);
+	assert.match((await consola('postgres', 'select 1 as uno')).salida, /uno\s*\n-+\n\s+1\n\(1 row\)/);
+	assert.ok((await consola('postgres', 'select nada')).error);
+});
+
+test('consola: motor desconocido responde 400', async () => {
+	const r = await fetch(`${base}/demo/api/consola/oracle`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"comando":"x"}' });
+	assert.equal(r.status, 400);
+});
+
+const { resaltar } = await import('../demo/app/js/resaltado.js');
+const { nuevoPrompt } = await import('../demo/app/js/consola.js');
+
+test('resaltar: palabras clave, strings y números de cada lenguaje', () => {
+	assert.equal(resaltar('postgres', "select 'a' -- x"), '<span class="t-kw">select</span> <span class="t-str">&#39;a&#39;</span> <span class="t-com">-- x</span>');
+	assert.equal(resaltar('postgres', '\\dt'), '<span class="t-kw">\\dt</span>');
+	assert.equal(resaltar('neo4j', 'MATCH (g:Genero)'), '<span class="t-kw">MATCH</span> (g<span class="t-etq">:Genero</span>)');
+	assert.equal(resaltar('mongo', 'db.x.find({ $gt: 3 })'),
+		'<span class="t-var">db</span>.x.<span class="t-fn">find</span>({ <span class="t-var">$gt</span>: <span class="t-num">3</span> })');
+	assert.equal(resaltar('redis', 'SET k "v w"'), '<span class="t-kw">SET</span> k <span class="t-str">&quot;v w&quot;</span>');
+	assert.equal(resaltar('cassandra', 'SELECT x1 FROM t'), '<span class="t-kw">SELECT</span> x1 <span class="t-kw">FROM</span> t');
+});
+
+test('nuevoPrompt: cambia con use en Mongo y en Cassandra', () => {
+	assert.equal(nuevoPrompt('mongo', 'use admin', { salida: 'switched to db admin', error: false }), 'admin>');
+	assert.equal(nuevoPrompt('cassandra', 'USE system;', { salida: '', error: false }), 'cqlsh:system>');
+	assert.equal(nuevoPrompt('cassandra', 'USE nada;', { salida: 'x', error: true }), null);
+	assert.equal(nuevoPrompt('postgres', 'select 1', { salida: '', error: false }), null);
 });

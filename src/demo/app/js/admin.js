@@ -1,4 +1,4 @@
-// Consola admin: alta de serie (P1), licencias y retiro (P8), sesiones activas (P6), fallas y reinicio.
+// Vistas del admin: alta de serie (P1), licencias (P8), sesiones activas (P6) y fallas.
 import { registrar, ir } from './router.js';
 import { pedir, leer, armarFalla, fallaArmada } from './api.js';
 import { PASOS } from './motores.js';
@@ -6,10 +6,10 @@ import { esc, pildora, corto, MOTORES, aviso, abrirModal } from './util.js';
 
 const API = '/api/v1';
 const DURACION_EPISODIO = 2700;
-const FECHA_SEED = '2026-10-17'; // "hoy" del seed: las licencias vencidas a esta fecha son las de P8
+const FECHA_SEED = '2026-10-17'; // "hoy" del seed
 const REFRESCO_SESIONES_MS = 5000;
 
-let refresco = null; // setInterval de la pestaña de sesiones activas
+let refresco = null;
 
 let demo = null;
 const datosDemo = async () => (demo ??= await leer('/demo/api/datos'));
@@ -17,7 +17,7 @@ const datosDemo = async () => (demo ??= await leer('/demo/api/datos'));
 const EDADES = [0, 7, 13, 16, 18]; // las que acepta P1
 const TIPOS_VINCULO = { secuela: 'Secuela de', precuela: 'Precuela de', mismo_universo: 'Mismo universo que', similar: 'Similar a' };
 
-// Cuerpo del alta (P1) con lo elegido en el formulario. El título lleva el prefijo para que "Reiniciar demo" la borre
+// El título lleva el prefijo para que "Reiniciar demo" la borre
 export function cuerpoAlta(d, { titulo, episodios, generos, idPlataforma, clasificacionEdad, anioEstreno, actores, vinculo }) {
 	const limpio = titulo.trim().startsWith(d.prefijoAlta) ? titulo.trim() : d.prefijoAlta + titulo.trim();
 	return {
@@ -32,9 +32,8 @@ export function cuerpoAlta(d, { titulo, episodios, generos, idPlataforma, clasif
 	};
 }
 
-// Listeners globales del admin (fuera del import, así el módulo también se puede importar en las pruebas)
+// Fuera del import para poder importar el módulo en las pruebas
 export function iniciar() {
-	// "Reiniciar demo" está en la barra admin (la pinta el router)
 	document.addEventListener('click', async (e) => {
 		if (!e.target.closest('#reiniciar')) return;
 		const r = await leer('/demo/api/reiniciar', { method: 'POST' }).catch((err) => ({ error: err.message }));
@@ -43,14 +42,11 @@ export function iniciar() {
 		aviso(`Demo reiniciada: ${r.sesionesCerradas} sesiones cerradas, ${r.retirosDeshechos} retiros deshechos, ${r.seriesBorradas} series borradas`);
 		ir(location.hash.slice(2));
 	});
-	// El refresco de sesiones activas se corta al salir de esa pestaña
 	window.addEventListener('hashchange', () => { clearInterval(refresco); refresco = null; });
 }
 
 const encabezado = (titulo, motores, texto) => `<div class="panel" style="background:none;border:0;padding:0">
 	<h1>${titulo}</h1><p class="suave">${motores.map(pildora).join(' ')} ${texto}</p></div>`;
-
-// ─── Catálogo (P1) ────────────────────────────────────────────────────────────
 
 const chips = (nombre, items, elegidos) => `<div class="chips">${items.map((x) => `<label class="chip">
 	<input type="checkbox" name="${nombre}" value="${esc(x.id)}" ${elegidos.includes(x.id) ? 'checked' : ''}><span>${esc(x.nombre)}</span></label>`).join('')}</div>`;
@@ -71,7 +67,7 @@ registrar('admin/catalogo', async (vista, params, sigue) => {
 	}
 	if (!sigue()) return;
 
-	// Valores precargados: los de la serie demo, así se puede dar de alta con un solo clic
+	// Precargado con la serie demo
 	const actores = [...d.serie.elenco.map((a) => ({ id: a.idActor, nombre: a.nombre })),
 		...catalogo.actores.filter((a) => !d.serie.elenco.some((e) => e.idActor === a.id))];
 	const destinos = [{ id: d.serie.id, nombre: d.serie.titulo },
@@ -136,8 +132,6 @@ registrar('admin/catalogo', async (vista, params, sigue) => {
 	};
 	await listar();
 }, 'admin');
-
-// ─── Licencias (P8) ───────────────────────────────────────────────────────────
 
 const filaContenido = (c) => `<div class="panel" data-id="${c.id}">
 	<h2>${esc(c.titulo)} <span class="suave" style="font-size:13px;font-weight:400">· ${esc(c.estado)}</span></h2>
@@ -211,9 +205,6 @@ async function trazabilidad(c) {
 		${seccion('postgres', 'Licencias', `<p>${(t.licencias.licencias ?? []).map((l) => `${esc(l.region)} ${esc(l.estado)} hasta ${esc(l.hasta)}`).join(' · ') || 'sin licencias'}</p>`, t.licencias)}`);
 }
 
-// ─── Sesiones activas (P6) ────────────────────────────────────────────────────
-
-
 registrar('admin/sesiones', async (vista) => {
 	const [{ cuentas }, { dispositivos }] = await Promise.all([leer('/demo/api/app/cuentas'), leer('/demo/api/app/dispositivos')]);
 	vista.innerHTML = `${encabezado('Sesiones activas', ['redis', 'cassandra'], 'Las sesiones activas y el cupo viven en Redis con vencimiento (120 s sin reportes). Al cerrarse, por expiración, en forma remota o manual, el cierre queda registrado en Cassandra.')}
@@ -259,8 +250,6 @@ registrar('admin/sesiones', async (vista) => {
 	clearInterval(refresco);
 	refresco = setInterval(mostrar, REFRESCO_SESIONES_MS);
 }, 'admin');
-
-// ─── Fallas ───────────────────────────────────────────────────────────────────
 
 const EJERCICIOS = {
 	P1: 'Alta de serie (Admin → Catálogo)',

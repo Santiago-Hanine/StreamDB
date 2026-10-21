@@ -30,8 +30,6 @@ a { color: inherit; text-decoration: none; }
 h1, h2, h3 { margin: 0 0 .5em; line-height: 1.2; }
 button, select, input, textarea { font: inherit; color: inherit; }
 
-/* ─── Estructura ───────────────────────────────────────────────────────────── */
-
 #barra {
 	height: var(--alto-barra);
 	display: flex; align-items: center; gap: 22px;
@@ -71,8 +69,6 @@ button, select, input, textarea { font: inherit; color: inherit; }
 #aviso.error { border-color: var(--error); }
 #aviso[hidden] { display: none; }
 
-/* ─── Controles ────────────────────────────────────────────────────────────── */
-
 .boton {
 	background: var(--superficie-2); border: 1px solid var(--borde); border-radius: 6px;
 	padding: 8px 14px; cursor: pointer; font-weight: 600;
@@ -96,8 +92,6 @@ input[type=text], input[type=search], input[type=date], input[type=number], sele
 .m-cassandra { background: var(--cassandra); }
 .m-redis { background: var(--redis); color: #fff; }
 .m-postgres { background: var(--postgres); color: #fff; }
-
-/* ─── Inicio y elección ────────────────────────────────────────────────────── */
 
 .centro { max-width: 760px; margin: 40px auto; text-align: center; }
 .centro .logo-grande { color: var(--acento); font-size: 54px; font-weight: 900; letter-spacing: -2px; margin-bottom: 4px; }
@@ -137,8 +131,6 @@ input[type=text], input[type=search], input[type=date], input[type=number], sele
 .dispositivo.en-uso { border-style: dashed; }
 .dispositivo .en-uso-tag { font-size: 11px; color: var(--acento); }
 
-/* ─── Inicio del usuario ───────────────────────────────────────────────────── */
-
 .destacado {
 	min-height: 240px; border-radius: 14px; padding: 32px; margin-bottom: 26px;
 	display: flex; flex-direction: column; justify-content: flex-end; position: relative; overflow: hidden;
@@ -174,8 +166,6 @@ table.tabla { width: 100%; border-collapse: collapse; }
 table.tabla th, table.tabla td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--borde); vertical-align: top; }
 table.tabla th { color: var(--suave); font-weight: 600; font-size: 12px; }
 
-/* ─── Modal y reproductor ──────────────────────────────────────────────────── */
-
 #modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 40; display: grid; place-items: center; padding: 20px; }
 #modal[hidden] { display: none; }
 .modal-caja { background: var(--superficie); border: 1px solid var(--borde); border-radius: 14px; width: min(620px, 100%); max-height: 90vh; overflow-y: auto; padding: 24px; position: relative; }
@@ -195,8 +185,6 @@ table.tabla th { color: var(--suave); font-weight: 600; font-size: 12px; }
 #player .controles { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 #player .mensaje { background: rgba(0,0,0,.6); border: 1px solid var(--borde); border-radius: 10px; padding: 16px; max-width: 520px; margin: 0 auto; text-align: center; }
 #player .mensaje.error { border-color: var(--error); }
-
-/* ─── Columna de motores ───────────────────────────────────────────────────── */
 
 #motores h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--suave); }
 #motores .accion { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
@@ -225,8 +213,6 @@ details.detalle ol { padding-left: 18px; margin: 8px 0; }
 details.detalle li { margin-bottom: 8px; }
 details.detalle pre { white-space: pre-wrap; word-break: break-word; background: #0b0b0d; padding: 6px 8px; border-radius: 6px; margin: 4px 0 0; font-size: 11px; max-height: 160px; overflow: auto; }
 
-/* ─── Admin ────────────────────────────────────────────────────────────────── */
-
 .panel { background: var(--superficie); border: 1px solid var(--borde); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
 .panel h2 { font-size: 18px; display: flex; gap: 8px; align-items: center; }
 .formulario { display: grid; grid-template-columns: 160px 1fr; gap: 10px 14px; align-items: center; }
@@ -247,3 +233,53 @@ details.detalle pre { white-space: pre-wrap; word-break: break-word; background:
 .chip input:focus-visible + span { outline: 2px solid var(--acento); }
 textarea.campo { background: var(--superficie-2); border: 1px solid var(--borde); border-radius: 6px; padding: 8px; }
 .formulario > label { align-self: start; padding-top: 6px; }
+
+body.consola-activa #motores { display: none; }
+body.consola-activa #vista { display: flex; padding: 16px 20px; overflow: hidden; }
+.consola { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pestanas { display: flex; gap: 4px; }
+.pestana {
+	background: var(--superficie); border: 1px solid var(--borde); border-bottom: 0; border-radius: 8px 8px 0 0;
+	padding: 8px 18px; cursor: pointer; color: var(--suave); font-weight: 600; border-top: 3px solid transparent;
+}
+.pestana:hover { color: var(--texto); }
+.pestana.activa { background: #0b0b0d; color: var(--texto); }
+.pestana.activa.p-mongo { border-top-color: var(--mongo); }
+.pestana.activa.p-cassandra { border-top-color: var(--cassandra); }
+.pestana.activa.p-neo4j { border-top-color: var(--neo4j); }
+.pestana.activa.p-redis { border-top-color: var(--redis); }
+.pestana.activa.p-postgres { border-top-color: #5b8fc7; }
+.herramientas {
+	display: flex; gap: 10px; align-items: center; padding: 8px 12px; font-size: 12px;
+	background: #0b0b0d; border: 1px solid var(--borde); border-bottom: 0;
+}
+.herramientas .atajos { margin-left: auto; }
+.pantalla {
+	--mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 40px;
+	background: #0b0b0d; border: 1px solid var(--borde); border-radius: 0 0 10px 10px;
+	font: 13px/1.5 var(--mono); cursor: text;
+}
+.pantalla pre { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-word; }
+.pantalla code { font: inherit; color: var(--texto); }
+.pantalla .bloque { margin-bottom: 12px; }
+.pantalla .cmd, .linea-input { display: flex; gap: 8px; align-items: flex-start; }
+.pantalla .cmd pre { flex: 1; min-width: 0; }
+.pantalla .prompt { color: var(--ok); flex-shrink: 0; white-space: nowrap; }
+.pantalla .ms { color: var(--suave); font-size: 11px; flex-shrink: 0; }
+.pantalla .salida { color: #c9c9d1; margin-top: 2px; }
+.pantalla .salida.error { color: var(--error); }
+.editor { flex: 1; min-width: 0; display: grid; }
+.editor > * { grid-area: 1 / 1; margin: 0; padding: 0; border: 0; font: inherit; white-space: pre-wrap; word-break: break-word; overflow: hidden; }
+.editor textarea { background: transparent; color: transparent; caret-color: var(--texto); resize: none; outline: none; }
+.editor textarea[readonly] { caret-color: transparent; }
+.editor textarea::selection { background: rgba(255,255,255,.25); }
+
+.t-kw { color: #ff7b72; }
+.t-str { color: #a5d6ff; }
+.t-num { color: #79c0ff; }
+.t-com { color: #8b949e; font-style: italic; }
+.t-fn { color: #d2a8ff; }
+.t-var { color: #ffa657; }
+.t-id { color: #e6c07b; }
+.t-etq { color: #7ee787; }

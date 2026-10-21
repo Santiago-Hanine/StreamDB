@@ -1,20 +1,19 @@
-// Enrutado por hash (#/inicio, #/home, #/admin/licencias…) y barra superior.
+// Router por hash (#/inicio, #/admin/licencias…) y barra superior.
 import { estado, cargar, guardar, salir } from './estado.js';
 import { esc } from './util.js';
 import { cerrarPlayer } from './player.js';
 
-const rutas = new Map(); // nombre → { render, requiere }
+const rutas = new Map();
 let actual = null;
 
-// Cada render recibe sigue(): deja de ser true cuando empieza otro (ej. se cambió de perfil
-// mientras cargaba el inicio), así un render viejo no pinta sobre la vista nueva
+// sigue() deja de ser true cuando empieza otro render, para que uno viejo no pise la vista nueva
 let turno = 0;
 export function nuevoTurno() {
 	const mio = ++turno;
 	return () => mio === turno;
 }
 
-// requiere: 'usuario' (cuenta, perfil y dispositivo elegidos) | 'admin' | null
+// requiere: 'usuario' | 'admin' | null
 export function registrar(nombre, render, requiere = null) {
 	rutas.set(nombre, { render, requiere });
 }
@@ -43,8 +42,6 @@ export async function pintar() {
 	await ruta.render(vista, params, sigue);
 }
 
-// ─── Barra superior ───────────────────────────────────────────────────────────
-
 const ICONO = { tv: '📺', movil: '📱', web: '💻', consola: '🎮', tablet: '📲' };
 export const icono = (tipo) => ICONO[tipo] ?? '🖥️';
 
@@ -52,7 +49,6 @@ function pintarBarra(actual) {
 	const barra = document.getElementById('barra');
 	const link = (ruta, texto) => `<a href="#/${ruta}" class="${actual === ruta ? 'activo' : ''}">${texto}</a>`;
 	const logo = '<a href="#/inicio" class="logo">StreamDB</a>';
-	// Reproducción en curso minimizada: se puede volver desde cualquier vista
 	const mirando = estado.sesion && document.getElementById('player').hidden
 		? `<button class="boton chico rojo" id="volver-player" title="La sesión sigue activa y reportando">▶ ${esc(estado.sesion.titulo)}${estado.sesion.expirada ? ' · expirada' : ''} · volver</button>` : '';
 
@@ -61,7 +57,7 @@ function pintarBarra(actual) {
 			`<option value="${p.id}" ${p.id === estado.perfil.id ? 'selected' : ''}>${esc(p.nombre)} · +${p.clasificacionEdad}</option>`).join('');
 		const dispositivos = estado.dispositivos.map((d) =>
 			`<option value="${d.id}" ${d.id === estado.dispositivo.id ? 'selected' : ''}>${icono(d.tipo)} ${esc(d.modelo)}</option>`).join('');
-		barra.innerHTML = `${logo}<nav>${link('home', 'Inicio')}${link('explorar', 'Explorar')}${link('actividad', 'Mi actividad')}</nav>
+		barra.innerHTML = `${logo}<nav>${link('home', 'Inicio')}${link('explorar', 'Explorar')}${link('actividad', 'Mi actividad')}${link('consola', 'Consola')}</nav>
 			<div class="selectores">${mirando}
 				<label title="Perfil">👤 <select id="sel-perfil">${perfiles}</select></label>
 				<label title="Dispositivo"><select id="sel-dispositivo">${dispositivos}</select></label>
@@ -80,17 +76,16 @@ function pintarBarra(actual) {
 		};
 	} else if (estado.modo === 'admin') {
 		barra.innerHTML = `${logo}<span class="etiqueta-admin">Admin</span>
-			<nav>${link('admin/catalogo', 'Catálogo')}${link('admin/licencias', 'Licencias')}${link('admin/sesiones', 'Sesiones activas')}${link('admin/fallas', 'Fallas')}</nav>
+			<nav>${link('admin/catalogo', 'Catálogo')}${link('admin/licencias', 'Licencias')}${link('admin/sesiones', 'Sesiones activas')}${link('admin/fallas', 'Fallas')}${link('consola', 'Consola')}</nav>
 			<div class="selectores">${mirando}<button class="boton chico" id="reiniciar">Reiniciar demo</button>
 				<button class="boton chico" id="a-usuario">Vista usuario ↩</button><button class="boton chico" id="salir">Salir</button></div>`;
-		// Vuelve con la cuenta, el perfil y el dispositivo que se habían elegido (si los hay)
 		barra.querySelector('#a-usuario').onclick = () => {
 			estado.modo = 'usuario';
 			guardar();
 			ir(estado.cuenta && estado.perfil && estado.dispositivo ? 'home' : 'cuentas');
 		};
 	} else {
-		barra.innerHTML = logo;
+		barra.innerHTML = `${logo}<nav>${link('consola', 'Consola')}</nav>`;
 	}
 	barra.querySelector('#salir')?.addEventListener('click', async () => { await cerrarPlayer({ silencioso: true }); salir(); ir('inicio'); });
 	barra.querySelector('#volver-player')?.addEventListener('click', () => window.dispatchEvent(new Event('volver-player')));

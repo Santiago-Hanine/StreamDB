@@ -5,11 +5,11 @@ import { pedidoInvalido } from '../lib/errores.js';
 import { ejecutarSaga } from '../lib/saga.js';
 
 const EDADES = [0, 7, 13, 16, 18];
-// "precuela" se acepta en la entrada, pero se guarda como la secuela al revés
+// La precuela se guarda como secuela invertida
 const TIPOS_VINCULO = ['secuela', 'precuela', 'mismo_universo', 'similar'];
 const esEntero = (v, min = 1) => Number.isInteger(v) && v >= min;
 
-// Valida TODO antes de empezar la saga: si la entrada es inválida, no se escribe nada
+// Se valida todo antes de la saga, así una entrada inválida no escribe nada
 async function validar(serie) {
 	if (!serie || typeof serie !== 'object') throw pedidoInvalido('Falta el body con la serie');
 	const vinculos = serie.vinculos ?? [];
@@ -49,15 +49,14 @@ async function validar(serie) {
 	}
 	if (errores.length) throw pedidoInvalido('La serie no es válida', errores);
 
-	// 2. Que exista todo lo que se referencia, cada cosa en su motor dueño
-	// Plataforma (Mongo): existe si algún contenido la usa (no hay colección de plataformas)
+	// No hay colección de plataformas: existe si algún contenido la usa
 	const conPlataforma = await db.collection('contenidos').findOne(
 		{ 'plataforma.id': serie.idPlataforma },
 		{ projection: { plataforma: 1 } },
 	);
 	if (!conPlataforma) throw pedidoInvalido(`No existe la plataforma ${serie.idPlataforma}`);
 
-	// Géneros (Neo4j): solo los del catálogo, así no se crean géneros nuevos por error
+	// Solo géneros que ya existen, para no crear nuevos por error
 	const generos = await cypher('MATCH (g:Genero) WHERE g.nombre IN $generos RETURN g.nombre AS nombre', {
 		generos: serie.generos,
 	});
@@ -65,7 +64,7 @@ async function validar(serie) {
 	const generosFaltan = serie.generos.filter((g) => !generosExistentes.has(g));
 	if (generosFaltan.length) throw pedidoInvalido('Hay géneros que no existen', generosFaltan);
 
-	// Actores (Neo4j, su dueño): se trae el nombre para la copia del elenco en Mongo
+	// El nombre se copia al elenco en Mongo
 	const idsActores = [...new Set(serie.elenco.map((a) => a.idActor))];
 	const actores = await cypher(
 		`MATCH (a:Actor) WHERE a.id IN $ids RETURN a.id AS id, a.nombre + ' ' + a.apellido AS nombre`,
@@ -75,7 +74,6 @@ async function validar(serie) {
 	const actoresFaltan = idsActores.filter((id) => !nombres.has(id));
 	if (actoresFaltan.length) throw pedidoInvalido('Hay actores que no existen', actoresFaltan);
 
-	// Contenidos vinculados (Neo4j): tienen que existir y no estar retirados
 	const idsVinculos = [...new Set(vinculos.map((v) => v.idContenido))];
 	const destinos = await cypher(
 		`MATCH (c:Contenido) WHERE c.id IN $ids AND c.estado <> 'retirado' RETURN c.id AS id`,
@@ -106,7 +104,7 @@ export async function altaSerie(serie, { fallarEn } = {}) {
 
 	const ficha = {
 		tipo: 'serie',
-		estado: 'borrador', // no aparece en la exploración hasta el paso "publicar"
+		estado: 'borrador', // no aparece en la exploración hasta publicar
 		titulo: serie.titulo.trim(),
 		clasificacionEdad: serie.clasificacionEdad,
 		plataforma,
@@ -122,7 +120,6 @@ export async function altaSerie(serie, { fallarEn } = {}) {
 
 	const elenco = serie.elenco.map((a) => ({ idActor: a.idActor, personaje: a.personaje ?? null }));
 
-	// "La nueva es precuela de X" se guarda como "X es secuela de la nueva"
 	const vinculos = (serie.vinculos ?? []).map((v) =>
 		v.tipo === 'precuela'
 			? { idOrigen: v.idContenido, idDestino: id, tipo: 'secuela' }
@@ -155,7 +152,7 @@ export async function altaSerie(serie, { fallarEn } = {}) {
 				},
 			},
 			{
-				nombre: 'nodo', // Neo4j: el contenido y sus géneros
+				nombre: 'nodo', // Neo4j
 				ejecutar: async () => {
 					await cypher(
 						`MERGE (c:Contenido {id: $id})
@@ -196,12 +193,11 @@ export async function altaSerie(serie, { fallarEn } = {}) {
 					);
 				},
 				compensar: async () => {
-					// Solo los vínculos de esta serie: es nueva, no tenía otros
 					await cypher('MATCH (:Contenido {id: $id})-[r:RELACIONADO]-() DELETE r', { id });
 				},
 			},
 			{
-				nombre: 'publicar', // Neo4j y por último Mongo: recién acá se vuelve visible
+				nombre: 'publicar', // Neo4j y Mongo: recién acá se vuelve visible
 				ejecutar: async () => {
 					await cypher(`MATCH (c:Contenido {id: $id}) SET c.estado = 'publicado'`, { id });
 					await contenidos.updateOne({ _id: id }, { $set: { estado: 'publicado' } });

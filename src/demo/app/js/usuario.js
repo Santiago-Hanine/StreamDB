@@ -1,4 +1,4 @@
-// Vistas del usuario: inicio (destacado + filas), detalle de un contenido.
+// Vistas del usuario: inicio, detalle, explorar y mi actividad.
 import { registrar } from './router.js';
 import { estado } from './estado.js';
 import { pedir, leer, combinar } from './api.js';
@@ -11,7 +11,7 @@ const POR_PAGINA = 24;
 const MESES_ACTIVIDAD = 3;
 const API = '/api/v1';
 
-// ─── Carátulas: degradado derivado del id (sin imágenes externas) ─────────────
+// Carátulas: degradado derivado del id
 
 function tono(id) {
 	let h = 0;
@@ -30,7 +30,6 @@ export function caratula(c, { extra = '', tag = '', progreso = null } = {}) {
 		<div class="titulo">${esc(c.titulo)}</div>${extra ? `<div class="extra">${esc(extra)}</div>` : ''}${barra}</div>`;
 }
 
-// Clic en cualquier carátula de un contenedor → detalle
 export function alClicCaratula(contenedor) {
 	contenedor.addEventListener('click', (e) => {
 		const el = e.target.closest('.caratula');
@@ -39,8 +38,6 @@ export function alClicCaratula(contenedor) {
 }
 
 const episodioTexto = (cv) => (cv.temporada ? `T${cv.temporada} · E${cv.episodio} · ${cv.tituloEpisodio}` : 'Película');
-
-// ─── Detalle de un contenido ──────────────────────────────────────────────────
 
 export async function abrirDetalle(id) {
 	const caja = abrirModal('<p class="vacio">Cargando…</p>');
@@ -69,8 +66,6 @@ export async function abrirDetalle(id) {
 	});
 }
 
-// ─── Inicio del usuario ───────────────────────────────────────────────────────
-
 let demo = null;
 const datosDemo = async () => (demo ??= await leer('/demo/api/datos'));
 
@@ -78,7 +73,7 @@ registrar('home', async (vista, params, sigue) => {
 	const p = estado.perfil;
 	vista.innerHTML = '<div id="destacado"></div><div id="filas"><p class="vacio">Cargando…</p></div>';
 
-	// Si Neo4j no responde no hay géneros para las filas, pero "continuar viendo" (Redis) y las demás filas siguen
+	// Si Neo4j no responde no hay filas por género, pero el resto sigue
 	const [catalogo, d] = await Promise.all([
 		leer('/demo/api/app/catalogo').catch(() => null),
 		datosDemo().catch(() => null),
@@ -98,7 +93,6 @@ registrar('home', async (vista, params, sigue) => {
 	if (!estado.conservarColumna) mostrarClic(`Abrir el inicio de ${p.nombre}`, combinar(resultados));
 	estado.conservarColumna = false;
 
-	// Filas
 	const filas = pedidos.map((x, i) => {
 		const r = resultados[i];
 		let items = [];
@@ -127,7 +121,7 @@ registrar('home', async (vista, params, sigue) => {
 		mostrarClic(`Fila «${pedidos[i].titulo}»`, resultados[i]);
 	});
 
-	// Destacado: lo primero de "continuar viendo" que sea apto; si no, la serie demo si es apta; si no, lo primero del catálogo
+	// Destacado: lo primero apto de continuar viendo, si no la serie demo, si no lo primero del catálogo
 	const cv = resultados[0].status === 200 ? resultados[0].cuerpo.contenidos : [];
 	const candidatos = [...cv.slice(0, 3).map((c) => ({ id: c.idContenido, cv: c })), ...(d ? [{ id: d.serie.id }] : [])];
 	let elegido = null;
@@ -150,8 +144,6 @@ registrar('home', async (vista, params, sigue) => {
 	vista.querySelector('#play').onclick = () => abrirPlayer(elegido.id);
 	vista.querySelector('#info').onclick = () => abrirDetalle(elegido.id);
 }, 'usuario');
-
-// ─── Explorar (P7) ────────────────────────────────────────────────────────────
 
 const opciones = (lista, elegido, todos) => `<option value="">${todos}</option>`
 	+ lista.map((x) => `<option value="${esc(x.id ?? x)}" ${(x.id ?? x) === elegido ? 'selected' : ''}>${esc(x.nombre ?? x)}</option>`).join('');
@@ -206,8 +198,6 @@ registrar('explorar', async (vista) => {
 	await buscar();
 }, 'usuario');
 
-// ─── Mi actividad (P3: historial en Cassandra) ────────────────────────────────
-
 export function rangoMeses(hoy, meses) {
 	const aaaamm = (d) => d.toISOString().slice(0, 7);
 	const desde = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - (meses - 1), 1));
@@ -231,7 +221,7 @@ registrar('actividad', async (vista) => {
 		caja.innerHTML = '<p class="vacio">No viste nada en este período.</p>';
 		return;
 	}
-	// Nombres de los episodios: una ficha por serie distinta
+	// Una ficha por serie para los nombres de los episodios
 	const series = [...new Set(visualizaciones.filter((v) => v.idEpisodio && v.idEpisodio !== v.idContenido).map((v) => v.idContenido))];
 	const fichas = new Map(await Promise.all(series.map(async (id) => [id, await leer(`/demo/api/app/contenidos/${id}`).catch(() => null)])));
 	const fecha = (f) => new Date(f).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });

@@ -14,7 +14,7 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 	const sagas = db.collection('sagas');
 	const idSaga = nuevoId();
 
-	// 1. Registrar la saga ANTES de escribir nada
+	// 1. Registrar la saga antes de escribir nada
 	await sagas.insertOne({
 		_id: idSaga, tipo, estado: 'en_curso', datos,
 		pasos: nombres.map((nombre) => ({ nombre, estado: 'pendiente' })),
@@ -31,16 +31,14 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 	};
 
 	// 2. Ejecutar los pasos en orden
-	const hechos = []; // { i, resultado } de cada paso completado
+	const hechos = [];
 	let i = 0;
 	try {
 		for (; i < pasos.length; i++) {
 			if (fallarEn === pasos[i].nombre) {
 				throw new ErroresApp(`Falla provocada en "${pasos[i].nombre}"`, 500);
 			}
-			// Lo que devuelve ejecutar() se guarda y después se le pasa a compensar()
-			// (ej. en P4: el "continuar viendo" anterior, para poder restaurarlo).
-			// Recibe el idSaga, para los pasos que dejan registrado qué operación los hizo (ej. P8)
+			// Lo que devuelve ejecutar() se le pasa a compensar(), junto con el idSaga
 			const resultado = await pasos[i].ejecutar({ idSaga });
 			hechos.push({ i, resultado });
 			await marcarPaso(i, 'hecho', esObjeto(resultado) ? { datos: resultado } : {});
@@ -49,7 +47,7 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 		await actualizar({ estado: 'completada' });
 		return { idSaga, estado: 'completada' };
 	} catch (error) {
-		// 3. Falló el paso i: compensar los completados, en orden inverso
+		// 3. Falló el paso i: compensar los completados en orden inverso
 		await marcarPaso(i, 'fallido', { error: error.message });
 		await actualizar({ estado: 'compensando' });
 
@@ -61,7 +59,7 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 				await marcarPaso(j, 'compensado');
 				compensados.push(pasos[j].nombre);
 			} catch (errorCompensacion) {
-				// Se sigue con las demás: mejor dejar el menor desorden posible
+				// Se sigue con las demás
 				await marcarPaso(j, 'fallido', { error: `compensación: ${errorCompensacion.message}` });
 				sinCompensar.push(pasos[j].nombre);
 			}
@@ -71,7 +69,7 @@ export async function ejecutarSaga({ tipo, pasos, fallarEn, datos = {} }) {
 		let errorFinal;
 
 		if (sinCompensar.length) {
-			// El peor caso: quedó inconsistente y hay que revisarlo a mano
+			// Quedó inconsistente: hay que revisarlo a mano
 			await actualizar({ estado: 'fallida' });
 			errorFinal = new ErroresApp(
 				`${tipo} falló en "${pasos[i].nombre}" y NO se pudo revertir del todo: revisar la saga`,

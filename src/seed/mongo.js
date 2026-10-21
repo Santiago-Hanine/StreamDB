@@ -1,7 +1,4 @@
-// Carga los datos de prueba en MongoDB desde cero.
-// Borra lo que haya en las colecciones y vuelve a insertar, así siempre queda el mismo estado.
-// Requiere haber corrido antes: npm run setup:mongo
-// Uso: npm run seed:mongo
+// Seed de MongoDB: borra las colecciones y vuelve a insertar. Requiere npm run setup:mongo.
 import 'dotenv/config';
 import db, { client } from '../db/mongo.js';
 import { generarDatos, SEMILLA } from './datos.js';
@@ -38,7 +35,6 @@ try {
 	console.log(`  Cuenta ${cuenta.email} (límite ${cuenta.limiteSesiones} sesiones): ${cuenta._id}`);
 	for (const p of cuenta.perfiles) console.log(`    Perfil ${p.nombre} (+${p.clasificacionEdad}): ${p.id}`);
 } catch (error) {
-	// Si un documento no cumple la validación del esquema, Mongo explica qué campo falla
 	console.error('Error cargando datos:', error.errInfo?.details ?? error.message);
 	process.exitCode = 1;
 } finally {

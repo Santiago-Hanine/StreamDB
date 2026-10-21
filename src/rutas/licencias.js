@@ -3,7 +3,7 @@ import { procesarVencimientos } from '../problemas/p8-retiro-trazabilidad.js';
 
 const router = Router();
 
-// P8: retira los contenidos cuyas licencias vencieron (?fecha=AAAA-MM-DD para simular otro día)
+// P8: proceso de vencimientos (?fecha=AAAA-MM-DD)
 router.post('/procesar-vencimientos', async (req, res) => {
 	res.json(await procesarVencimientos(req.query));
 });

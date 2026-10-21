@@ -1,11 +1,10 @@
 import 'dotenv/config';
 import { pool, sql } from '../db/postgres.js';
 
-// Licencia: el permiso para mostrar un contenido en una región durante un período.
-// Vive en PostgreSQL porque la base tiene que impedir que un contenido tenga dos licencias
-// superpuestas en la misma región, y ningún motor NoSQL de la cursada lo garantiza sin código propio.
+// Las licencias van en PostgreSQL porque la base tiene que impedir dos licencias superpuestas
+// en la misma región (EXCLUDE), y ningún NoSQL de la cursada lo garantiza sin código propio.
 const esquema = [
-	'CREATE EXTENSION IF NOT EXISTS btree_gist', // permite combinar = (uuid, región) con && (rangos) en un EXCLUDE
+	'CREATE EXTENSION IF NOT EXISTS btree_gist', // para combinar = con && en el EXCLUDE
 
 	`CREATE TABLE IF NOT EXISTS licencia (
        id_licencia   UUID PRIMARY KEY,
