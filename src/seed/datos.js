@@ -146,8 +146,7 @@ function generarDispositivo() {
 
 const compartenGenero = (a, b) => a.generos.some((g) => b.generos.includes(g));
 
-// Vínculos entre contenidos (relación recursiva del DER, con su tipoRelacion).
-// "precuela" no se guarda: es la secuela leída al revés.
+// Vínculos entre contenidos. La precuela no se guarda: es la secuela al revés.
 function generarVinculos(contenidos) {
 	const vinculos = [];
 	const usados = new Set();
@@ -158,14 +157,13 @@ function generarVinculos(contenidos) {
 		vinculos.push({ idOrigen: origen._id, idDestino: destino._id, tipo });
 	};
 
-	// La serie demo siempre tiene una secuela, un contenido del mismo universo y uno similar
+	// La serie demo siempre tiene una secuela, uno del mismo universo y uno similar
 	const [demo, ...resto] = contenidos;
 	const mismaPlataforma = resto.filter((c) => c.plataforma.id === demo.plataforma.id);
 	agregar(mismaPlataforma.find((c) => c.tipo === demo.tipo && c.anioEstreno >= demo.anioEstreno), demo, 'secuela');
 	agregar(mismaPlataforma.find((c) => !usados.has(clave(c, demo))), demo, 'mismo_universo');
 	agregar(demo, resto.find((c) => compartenGenero(c, demo) && !usados.has(clave(c, demo))), 'similar');
 
-	// Cada tipo con una regla que lo haga creíble
 	const reglas = {
 		similar: (a, b) => compartenGenero(a, b),
 		secuela: (a, b) => a.tipo === b.tipo && a.plataforma.id === b.plataforma.id,
@@ -179,8 +177,8 @@ function generarVinculos(contenidos) {
 			{ weight: 15, value: 'mismo_universo' },
 			{ weight: 65, value: 'similar' },
 		]);
-		if (!reglas[tipo](a, b)) continue; // el par no cumple la regla: se prueba con otro
-		// una secuela es posterior (o del mismo año) que la original
+		if (!reglas[tipo](a, b)) continue;
+		// la secuela no puede ser anterior a la original
 		if (tipo === 'secuela' && a.anioEstreno < b.anioEstreno) agregar(b, a, tipo);
 		else agregar(a, b, tipo);
 	}
@@ -211,7 +209,7 @@ function generarVisualizaciones(contenidos, cuentas, dispositivos) {
 		const contenido = faker.helpers.arrayElement(aptos.get(perfil.clasificacionEdad));
 		const dispositivo = faker.helpers.arrayElement(dispositivos);
 
-		// Lo que mira en esta tanda: en una serie, varios episodios seguidos desde el primero
+		// En una serie, varios episodios seguidos
 		const unidades = contenido.tipo === 'serie'
 			? contenido.temporadas.flatMap((t) => t.episodios).slice(0, entre(1, 8))
 			: [{ id: null, duracionSeg: contenido.duracionSeg }];
@@ -241,7 +239,6 @@ function generarVisualizaciones(contenidos, cuentas, dispositivos) {
 	return visualizaciones.slice(0, VOLUMEN.visualizaciones);
 }
 
-
 export function generarDatos() {
 	faker.seed(SEMILLA);
 	faker.setDefaultRefDate(FECHA_REFERENCIA);
@@ -255,7 +252,7 @@ export function generarDatos() {
 		fechaNacimiento: faker.date.birthdate({ min: 18, max: 85, mode: 'age' }),
 	}));
 
-	// Datos fijos para las demos: siempre existen y tienen los mismos IDs
+	// Datos fijos para las demos, siempre con los mismos ids
 	const serieDemo = generarContenido({
 		plataformas,
 		actores,

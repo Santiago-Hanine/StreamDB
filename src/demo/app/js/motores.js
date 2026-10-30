@@ -1,5 +1,4 @@
-// Columna "Qué pasó con tu último clic": qué motores intervinieron, una frase simple por motor,
-// la saga (si hubo) y, desplegable, cada operación exacta en orden.
+// Columna "Qué pasó con tu último clic": motores que intervinieron, saga y operaciones.
 import { esc, MOTORES } from './util.js';
 
 const ORDEN = ['mongo', 'redis', 'cassandra', 'neo4j', 'postgres'];
@@ -7,7 +6,7 @@ const ROL = {
 	mongo: 'catálogo, cuentas y log de sagas', redis: 'sesiones, cupo y continuar viendo', cassandra: 'historial y sesiones cerradas',
 	neo4j: 'elenco, vínculos y señales VIO', postgres: 'licencias',
 };
-// En qué motor corre cada paso de las sagas (para colorear la saga y las fallas)
+// Motor de cada paso de las sagas
 export const PASOS = {
 	P1: { ficha: 'mongo', episodios: 'mongo', nodo: 'neo4j', elenco: 'neo4j', vinculos: 'neo4j', publicar: 'mongo' },
 	P2: { reservar_cupo: 'redis', registrar_inicio: 'cassandra' },
@@ -19,7 +18,6 @@ const ESCRITURA = /^(INSERT|UPDATE|DELETE|BATCH|CREATE|MERGE|SET|EVAL|MULTI|inse
 const hay = (ops, re) => ops.some((o) => re.test(o.op));
 const operaciones = (n) => `${n} ${n === 1 ? 'operación' : 'operaciones'}`;
 
-// Una frase corta que cuenta qué hizo el motor en este pedido
 export function frase(motor, ops, cuerpo = {}) {
 	const c = cuerpo ?? {};
 	switch (motor) {

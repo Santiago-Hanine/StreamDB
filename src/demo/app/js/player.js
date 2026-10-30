@@ -1,16 +1,13 @@
-// Reproductor simulado: ▶ inicia la reproducción (P2), mientras "mira" reporta el segundo (P3),
-// al terminar registra el fin del episodio (P4) y al cerrar libera la sesión (P6).
-// El tiempo corre acelerado para no esperar un episodio entero.
+// Reproductor simulado: P2 al empezar, P3 mientras mira, P4 al terminar y P6 al cerrar.
 import { estado } from './estado.js';
 import { pedir, leer } from './api.js';
 import { esc, tiempo, abrirModal, cerrarModal, aviso } from './util.js';
 
-const VELOCIDAD = 30;          // 1 s real = 30 s de episodio
-const REPORTE_CADA_MS = 3000;  // el reproductor informa el segundo cada 3 s
+const VELOCIDAD = 30; // 1 s real = 30 s de episodio
+const REPORTE_CADA_MS = 3000;
 const DURACION_POR_DEFECTO = 2700;
 const API = '/api/v1';
 
-// Texto y duración de lo que se está viendo (episodio de una serie o película)
 export function unidad(ficha, idEpisodio) {
 	if (ficha.tipo !== 'serie') return { texto: 'Película', duracionSeg: ficha.duracionSeg || DURACION_POR_DEFECTO };
 	for (const t of ficha.temporadas ?? []) {
@@ -20,18 +17,18 @@ export function unidad(ficha, idEpisodio) {
 	return { texto: 'Episodio', duracionSeg: DURACION_POR_DEFECTO };
 }
 
-// Otro dispositivo no cierra la sesión anterior: queda activa (como otra pantalla de la casa) y
-// vence sola a los 2 minutos sin reportes. Así se llena el cupo desde una sola pestaña (P2 → 409).
+// Cambiar de dispositivo no cierra la sesión anterior (vence sola a los 2 min):
+// así se llena el cupo desde una sola pestaña.
 export const cerrarAnteriorAlAbrir = (anterior, idDispositivo) => anterior.idDispositivo === idDispositivo;
 
-// Qué controles tienen sentido: con la sesión expirada o el episodio terminado, solo salir
+// Con la sesión expirada o el episodio terminado solo se puede salir
 export const controles = (s) => {
 	const activa = !s.expirada && !s.terminado;
 	return { pausa: activa, final: activa };
 };
 
-let reloj = null;       // setInterval del avance
-let minimizado = false; // se navegó a otra vista: sigue reportando, sin pisar la columna
+let reloj = null;
+let minimizado = false; // se navegó a otra vista: sigue reportando
 let ultimoReporte = 0;
 let enviando = false;
 
@@ -42,8 +39,6 @@ function detener() {
 	clearInterval(reloj);
 	reloj = null;
 }
-
-// ─── Abrir ────────────────────────────────────────────────────────────────────
 
 export async function abrirPlayer(idContenido, idEpisodio) {
 	let anterior = sesion();
@@ -61,7 +56,7 @@ export async function abrirPlayer(idContenido, idEpisodio) {
 		return;
 	}
 
-	// La otra pantalla se suelta recién si esta pudo empezar (si hubo 409, se sigue pudiendo volver a ella)
+	// La otra pantalla se suelta solo si esta pudo empezar
 	if (anterior) soltar(anterior);
 	const ficha = await leer(`/demo/api/app/contenidos/${idContenido}`).catch(() => ({ titulo: 'Contenido', tipo: 'pelicula' }));
 	const u = unidad(ficha, r.cuerpo.idEpisodio);
@@ -76,7 +71,7 @@ export async function abrirPlayer(idContenido, idEpisodio) {
 	avisarCambio();
 }
 
-// La sesión anterior era de otro dispositivo: se deja de mirar acá, pero sigue ocupando su lugar
+// La sesión anterior era de otro dispositivo: sigue ocupando su lugar
 function soltar(anterior) {
 	detener();
 	estado.sesion = null;
@@ -87,10 +82,9 @@ function soltar(anterior) {
 
 const avisarCambio = () => window.dispatchEvent(new Event('player-cambio'));
 
-// Listeners globales (fuera del import, así el módulo también se puede importar en las pruebas)
+// Fuera del import para poder importar el módulo en las pruebas
 export function iniciar() {
-	// Cambiar de vista (o de perfil o dispositivo) con algo reproduciéndose lo minimiza:
-	// la sesión sigue activa y se ve en Admin → Sesiones
+	// Cambiar de vista con algo reproduciéndose lo minimiza: la sesión sigue activa
 	window.addEventListener('antes-de-pintar', () => {
 		if (sesion() && !el().hidden) { minimizado = true; el().hidden = true; }
 	});
@@ -102,7 +96,7 @@ export function iniciar() {
 	});
 }
 
-// La cuenta llegó a su límite de pantallas (P2 → 409)
+// Cupo lleno (P2 → 409)
 function sinLugar(cuerpo) {
 	const caja = abrirModal(`<h2>Ya hay ${cuerpo.detalle.limite} pantallas en uso</h2>
 		<p>${esc(cuerpo.error)}.</p>
@@ -117,8 +111,6 @@ function sinLugar(cuerpo) {
 	};
 	caja.querySelector('#otro').onclick = () => { cerrarModal(); location.hash = '#/quien'; };
 }
-
-// ─── Reproducción ─────────────────────────────────────────────────────────────
 
 function reproducir() {
 	detener();
@@ -186,14 +178,12 @@ export async function cerrarPlayer({ silencioso = false } = {}) {
 		if (r.status === 410) return;
 	}
 	await pedir({ metodo: 'DELETE', ruta: `${API}/reproducciones/${s.idSesion}`, accion: 'Cerrar la sesión de este dispositivo', mostrar: !silencioso });
-	// Se recarga el inicio ("continuar viendo" cambió) sin tapar en la columna el cierre de la sesión
+	// Se recarga el inicio sin tapar en la columna el cierre de la sesión
 	if (!silencioso && location.hash.startsWith('#/home')) {
 		estado.conservarColumna = true;
 		window.dispatchEvent(new HashChangeEvent('hashchange'));
 	}
 }
-
-// ─── Pantalla ─────────────────────────────────────────────────────────────────
 
 function pintar() {
 	const s = sesion();

@@ -1,22 +1,21 @@
 import 'dotenv/config';
 import cassandra from 'cassandra-driver';
 
-// No usa src/db/cassandra.js: ese se conecta AL keyspace, y acá todavía no existe
+// No usa src/db/cassandra.js porque ese se conecta al keyspace, que todavía no existe
 const { CASSANDRA_CONTACT_POINTS, CASSANDRA_DATACENTER, CASSANDRA_KEYSPACE: KEYSPACE = 'streamdb' } = process.env;
 const cliente = new cassandra.Client({
 	contactPoints: CASSANDRA_CONTACT_POINTS.split(','),
 	localDataCenter: CASSANDRA_DATACENTER,
 });
 
-// Diseño A1: una fila por visualización. "fecha" es el inicio y no cambia;
-// P2 crea la fila, P3 y P4 la actualizan por la misma clave.
-// Dos tablas con los mismos datos, una por cada consulta (en Cassandra se diseña por consulta).
+// Una fila por visualización: P2 la crea y P3 y P4 la actualizan por la misma clave.
+// Dos tablas con los mismos datos, una por consulta.
 const esquema = [
-	// Un solo nodo → replication_factor 1. En un cluster real: NetworkTopologyStrategy con 3 réplicas
+	// Un solo nodo: replication_factor 1 (en un cluster, NetworkTopologyStrategy con 3 réplicas)
 	`CREATE KEYSPACE IF NOT EXISTS ${KEYSPACE}
        WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}`,
 
-	// "Historial de un perfil en un período" (P3): partición por perfil y mes, lo más nuevo primero
+	// Historial de un perfil por período (P3): partición por perfil y mes, lo más nuevo primero
 	`CREATE TABLE IF NOT EXISTS ${KEYSPACE}.historial_por_perfil (
          id_perfil uuid, mes text, fecha timestamp, id_visualizacion uuid,
          id_contenido uuid, id_episodio uuid,      -- id_episodio: nulo en películas
@@ -24,7 +23,7 @@ const esquema = [
          PRIMARY KEY ((id_perfil, mes), fecha, id_visualizacion)
        ) WITH CLUSTERING ORDER BY (fecha DESC, id_visualizacion ASC)`,
 
-	// "Historial de un contenido" (trazabilidad, P8): partición por contenido
+	// Historial de un contenido (P8): partición por contenido
 	`CREATE TABLE IF NOT EXISTS ${KEYSPACE}.historial_por_contenido (
          id_contenido uuid, fecha timestamp, id_visualizacion uuid,
          id_perfil uuid, id_episodio uuid, id_sesion uuid,
@@ -32,8 +31,7 @@ const esquema = [
          PRIMARY KEY ((id_contenido), fecha, id_visualizacion)
        ) WITH CLUSTERING ORDER BY (fecha DESC, id_visualizacion ASC)`,
 
-	// Historial de sesiones de una cuenta (P6): una fila por sesión cerrada, con cuándo y por qué.
-	// Las sesiones activas viven en Redis; acá queda el registro cuando se cierran.
+	// Sesiones cerradas de una cuenta (P6). Las activas están en Redis.
 	`CREATE TABLE IF NOT EXISTS ${KEYSPACE}.sesiones_por_cuenta (
          id_cuenta uuid, fecha_inicio timestamp, id_sesion uuid,
          id_perfil uuid, id_dispositivo uuid, fecha_fin timestamp, motivo_cierre text,

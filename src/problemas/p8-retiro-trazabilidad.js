@@ -20,12 +20,12 @@ function validarFecha(fecha) {
 
 // PostgreSQL consultas:
 
-// Licencias vigentes de un contenido, con su período (vigencia es [desde, hasta))
+// vigencia es [desde, hasta)
 const LICENCIAS_VIGENTES = `
   SELECT id_licencia, region, lower(vigencia) AS desde, upper(vigencia) AS hasta,
          vigencia @> $2::date AS cubre_fecha
   FROM licencia WHERE id_contenido = $1 AND estado = 'vigente'`;
-// Idempotente: solo cambia las que siguen vigentes
+// Idempotente: solo cambia las vigentes
 const VENCER = `UPDATE licencia SET estado = 'vencida'
   WHERE id_licencia = ANY($1::uuid[]) AND estado = 'vigente' RETURNING id_licencia`;
 const REVIVIR = `UPDATE licencia SET estado = 'vigente'
@@ -35,11 +35,8 @@ const CONTENIDOS_CON_VENCIDAS = `
 
 // Redis consultas:
 
-// Saca el contenido de "continuar viendo" de todos los perfiles que lo tenían, en una sola operación
-// atómica, y devuelve lo que había para poder restaurarlo. También lo marca como retirado, así P3
-// deja de aceptar progreso de quien lo esté mirando (si no, sus reportes volverían a crear el cv). Los perfiles salen del índice
-// cv_perfiles:{contenido} que mantiene P3 (sin él habría que recorrer todas las claves con SCAN).
-// Las claves se arman acá adentro: un solo nodo de Redis (igual que en P6).
+// Saca el contenido de continuar viendo de todos los perfiles y devuelve lo que había para compensar.
+// Lo marca como retirado para que P3 deje de aceptar progreso. Los perfiles salen de cv_perfiles:{id} (evita SCAN).
 const QUITAR_CONTINUAR = `
 local idContenido = ARGV[1]
 local perfiles = redis.call('SMEMBERS', KEYS[1])
@@ -61,18 +58,12 @@ const MARCAR_RETIRADO = `MATCH (c:Contenido {id: $id})
   WITH c, c.estado AS previo
   SET c.estado = 'retirado', c.retiradoPor = $idSaga
   RETURN previo`;
-// La compensación solo deshace el retiro que hizo esta misma saga
+// La compensación solo deshace el retiro de esta saga
 const DESMARCAR = `MATCH (c:Contenido {id: $id}) WHERE c.retiradoPor = $idSaga
   SET c.estado = $previo REMOVE c.retiradoPor`;
 
-// ─── Retiro de un contenido (saga) ────────────────────────────────────────────
-
-// Orden: primero lo que deja de mostrarse en cada lugar y al final la licencia.
-// La licencia pasa a "vencida" recién cuando todo el retiro se completó: si algo falla, sigue
-// "vigente" y vencida, así que el próximo proceso de vencimientos lo vuelve a intentar solo.
+// La licencia se vence al final: si algo falla sigue vigente y el próximo proceso lo reintenta.
 export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
-
-	// 1. Validar
 	if (!esId(idContenido)) throw pedidoInvalido('idContenido no es un id válido');
 	fecha = validarFecha(fecha);
 
@@ -81,11 +72,10 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 		{ projection: { titulo: 1, estado: 1, retiro: 1 } },
 	);
 	if (!ficha) throw noEncontrado(`No existe el contenido ${idContenido}`);
-	// Reintento de un retiro que ya terminó bien: no se repite nada
+	// Reintento de un retiro ya terminado
 	if (ficha.estado === 'retirado') return { idContenido, titulo: ficha.titulo, yaRetirado: true, retiro: ficha.retiro };
 	if (ficha.estado !== 'publicado') throw conflicto(`"${ficha.titulo}" está en ${ficha.estado}: solo se retira lo publicado`);
 
-	// 2. PostgreSQL (lectura): ¿realmente terminó su licencia?
 	const licencias = await sql(LICENCIAS_VIGENTES, [idContenido, fecha]);
 	const vigentes = licencias.filter((l) => l.cubre_fecha);
 	if (vigentes.length) {
@@ -104,7 +94,7 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 		datos: { idContenido, fecha, idLicencia: ultima.id_licencia, licencias: idsVencidas },
 		pasos: [
 			{
-				nombre: 'continuar_viendo', // Redis: desaparece de "continuar viendo" de cada perfil
+				nombre: 'continuar_viendo', // Redis
 				ejecutar: async () => {
 					const guardado = await redis.eval(QUITAR_CONTINUAR, {
 						keys: [claves.perfilesConCv(idContenido), claves.retirado(idContenido)], arguments: [idContenido],
@@ -125,7 +115,7 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 				},
 			},
 			{
-				nombre: 'marcar_nodo', // Neo4j: desaparece de las recomendaciones (P5) y de los vínculos (P7)
+				nombre: 'marcar_nodo', // Neo4j: sale de recomendaciones y vínculos
 				ejecutar: async ({ idSaga }) => {
 					const [fila] = await cypher(MARCAR_RETIRADO, { id: idContenido, idSaga });
 					return { previo: fila?.previo ?? 'publicado', idSaga };
@@ -135,7 +125,7 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 				},
 			},
 			{
-				nombre: 'retirar_ficha', // Mongo (fuente del catálogo): desaparece de la exploración (P7)
+				nombre: 'retirar_ficha', // Mongo: sale de la exploración
 				ejecutar: async ({ idSaga }) => {
 					const { matchedCount } = await db.collection('contenidos').updateOne(
 						{ _id: idContenido, estado: 'publicado' },
@@ -152,7 +142,7 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 				},
 			},
 			{
-				nombre: 'vencer_licencias', // PostgreSQL: último, recién cuando todo lo demás se hizo
+				nombre: 'vencer_licencias', // PostgreSQL: último
 				ejecutar: async () => {
 					const filas = await sql(VENCER, [idsVencidas]);
 					return { vencidas: filas.map((f) => f.id_licencia) };
@@ -171,10 +161,7 @@ export async function retirarContenido(idContenido, { fecha, fallarEn } = {}) {
 	};
 }
 
-// ─── Proceso de vencimientos ──────────────────────────────────────────────────
-
-// Busca licencias vigentes que ya terminaron a la fecha. Si al contenido no le queda ninguna
-// licencia que cubra esa fecha, se retira (saga); si le queda otra, solo se marcan vencidas.
+// Vence las licencias terminadas a la fecha. Si al contenido no le queda otra, se retira (saga).
 export async function procesarVencimientos({ fecha } = {}) {
 	fecha = validarFecha(fecha);
 	const contenidos = await sql(CONTENIDOS_CON_VENCIDAS, [fecha]);
@@ -184,7 +171,7 @@ export async function procesarVencimientos({ fecha } = {}) {
 		try {
 			const licencias = await sql(LICENCIAS_VIGENTES, [idContenido, fecha]);
 			if (licencias.some((l) => l.cubre_fecha)) {
-				// Le queda otra licencia vigente (otra región o renovada): sigue publicado
+				// Le queda otra licencia: sigue publicado
 				await sql(VENCER, [licencias.filter((l) => l.hasta <= fecha).map((l) => l.id_licencia)]);
 				resultado.soloLicenciasVencidas++;
 			} else {
@@ -192,14 +179,12 @@ export async function procesarVencimientos({ fecha } = {}) {
 				resultado.retirados.push({ idContenido, titulo: r.titulo, idSaga: r.idSaga });
 			}
 		} catch (error) {
-			// Uno que falla no frena a los demás; su licencia sigue vigente y se reintenta en la próxima corrida
+			// Si uno falla sigue con los demás; se reintenta en la próxima corrida
 			resultado.errores.push({ idContenido, error: error.message, idSaga: error.idSaga });
 		}
 	}
 	return resultado;
 }
-
-// ─── Trazabilidad: un contenido a través de los cinco motores ─────────────────
 
 const VINCULOS_Y_SENALES = `
   MATCH (c:Contenido {id: $id})
@@ -221,14 +206,14 @@ const TOTAL_HISTORIAL = 'SELECT count(*) AS total FROM historial_por_contenido W
 const LICENCIAS = `SELECT id_licencia, region, lower(vigencia) AS desde, upper(vigencia) AS hasta, estado
   FROM licencia WHERE id_contenido = $1 ORDER BY lower(vigencia) DESC`;
 
-// Quién lo está viendo ahora: sesiones en viendo:{id} que siguen vivas, y sus perfiles
+// Sesiones vivas en viendo:{id} y sus perfiles
 async function viendoAhora(idContenido) {
 	const sesiones = await redis.zRange(claves.viendo(idContenido), 0, -1);
 	const perfiles = new Set();
 	let activas = 0;
 	for (const idSesion of sesiones) {
 		const [vive, s] = await Promise.all([redis.exists(claves.vida(idSesion)), redis.hGetAll(claves.sesion(idSesion))]);
-		if (!vive || s.idContenido !== idContenido) continue; // vencida, o la sesión ya pasó a otro contenido
+		if (!vive || s.idContenido !== idContenido) continue; // vencida o ya en otro contenido
 		activas++;
 		perfiles.add(s.idPerfil);
 	}
@@ -239,8 +224,7 @@ export async function trazabilidad(idContenido, { limite } = {}) {
 	if (!esId(idContenido)) throw pedidoInvalido('idContenido no es un id válido');
 	limite = Math.min(Math.max(parseInt(limite) || 20, 1), 200);
 
-	// Las cinco consultas van en paralelo, todas con el mismo id. Si un motor falla, se informa
-	// cuál y se devuelve lo del resto (allSettled, no all).
+	// Las cinco consultas en paralelo: si un motor falla se informa cuál y se devuelve el resto
 	const [ficha, grafo, ahora, historial, licencias] = await Promise.allSettled([
 		db.collection('contenidos').findOne(
 			{ _id: idContenido },

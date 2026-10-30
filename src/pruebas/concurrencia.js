@@ -1,7 +1,5 @@
-// Prueba de concurrencia de P2: varios dispositivos compiten al mismo tiempo por el último lugar
-// del cupo de la cuenta demo. Tiene que ganar uno solo y el resto recibir 409.
-// Al final compara con la versión ingenua (leer el cupo y después agregar, en dos comandos),
-// que con los mismos pedidos simultáneos supera el límite.
+// Concurrencia de P2: varios dispositivos piden el último lugar del cupo a la vez y tiene que ganar uno.
+// Después se compara con la versión ingenua (leer y después escribir), que supera el límite.
 import 'dotenv/config';
 import db, { client } from '../db/mongo.js';
 import { redis } from '../db/redis.js';
@@ -32,7 +30,7 @@ try {
 	console.log(`\nCuenta demo: límite ${limite}, ocupados ${await redis.zCard(claves.cupo(cuenta._id))}. `
 		+ `${COMPETIDORES} dispositivos piden el último lugar al mismo tiempo:`);
 
-	// 2. Todos a la vez: pasan juntos la validación de Mongo y llegan juntos a Redis
+	// 2. Todos a la vez
 	const competidores = dispositivos.slice(limite - 1);
 	const resultados = await Promise.allSettled(competidores.map(iniciar));
 	resultados.forEach((r, i) => console.log(`  dispositivo ${i + 1}: ${r.status === 'fulfilled'
@@ -54,12 +52,12 @@ try {
 	verificar(sagas.length === perdedores.length && sagas.every((s) => s.estado === 'compensada' && s.pasos[1].estado === 'pendiente'),
 		'las sagas de los perdedores se cortaron en reservar_cupo: no escribieron en Cassandra');
 
-	// 3. La versión ingenua, con los mismos pedidos simultáneos, sobre una clave de prueba
+	// 3. Versión ingenua con los mismos pedidos
 	const clave = 'prueba:cupo_ingenuo';
 	await redis.del(clave);
 	for (let i = 0; i < limite - 1; i++) await redis.zAdd(clave, { score: Date.now(), value: `ocupado${i}` });
 	await Promise.all(competidores.map(async (d) => {
-		if ((await redis.zCard(clave)) < limite) await redis.zAdd(clave, { score: Date.now(), value: d }); // leer y después escribir
+		if ((await redis.zCard(clave)) < limite) await redis.zAdd(clave, { score: Date.now(), value: d });
 	}));
 	const ingenuo = await redis.zCard(clave);
 	await redis.del(clave);

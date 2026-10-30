@@ -1,13 +1,11 @@
-// Pedidos a la API real con traza: cada uno se muestra en la columna de motores.
-// Si hay una falla "armada" y el pedido tiene ese paso, se manda ?fallarEn=<paso> y se desarma.
+// Pedidos a la API con traza, para la columna de motores. Si hay una falla armada se manda ?fallarEn.
 import { mostrarClic } from './motores.js';
 import { esc } from './util.js';
 
 let falla = null;
-const LIMITE_MS = 10000; // con un motor caído la API puede no responder: se corta y se muestra el error
+const LIMITE_MS = 10000; // con un motor caído la API puede no responder
 
-// La falla armada se gasta solo si la saga llegó a ese paso y falló ahí
-// (un rechazo previo, como una licencia vigente o un perfil no apto, no la consume)
+// La falla armada se gasta solo si la saga falló en ese paso
 export const fallaConsumida = (r, paso) => Boolean(r.traza?.saga?.pasos?.some((p) => p.nombre === paso && p.estado === 'fallido'));
 
 export async function pedir({ metodo = 'GET', ruta, body, accion, pasos = [], mostrar = true }) {
@@ -38,7 +36,7 @@ export async function pedir({ metodo = 'GET', ruta, body, accion, pasos = [], mo
 	return resultado;
 }
 
-// Consultas internas de la app (sin traza): devuelven el JSON o lanzan
+// Consultas internas, sin traza
 export async function leer(ruta, opciones) {
 	const r = await fetch(ruta, { signal: AbortSignal.timeout(LIMITE_MS), ...opciones });
 	const cuerpo = await r.json().catch(() => null);
@@ -58,7 +56,7 @@ export function armarFalla(paso) {
 	document.dispatchEvent(new CustomEvent('falla-armada'));
 }
 
-// Junta varios pedidos en uno solo para la columna (ej. el inicio del usuario hace cuatro)
+// Junta varios pedidos en uno para la columna
 export function combinar(resultados) {
 	const conTraza = resultados.filter((r) => r.traza);
 	const peor = resultados.find((r) => r.status >= 400 || r.status === 0);

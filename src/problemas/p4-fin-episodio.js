@@ -12,9 +12,8 @@ const mesDe = (fecha) => fecha.toISOString().slice(0, 7);
 
 // Redis consultas:
 
-// En una sola operación atómica: lee el "continuar viendo" anterior (para poder restaurarlo)
-// y lo mueve al episodio siguiente, o lo saca si ya no hay siguiente (película o último episodio).
-// También marca en la sesión que esta visualización terminó, así P3 no la vuelve a pisar.
+// Script atómico: pasa continuar viendo al episodio siguiente (o lo saca si no hay) y devuelve el anterior
+// para compensar. Marca la visualización como terminada para que P3 no la pise.
 const MOVER_CONTINUAR = `
 local cv, continuar, perfilesConCv, sesion = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
 local modo, idContenido, idPerfil, siguiente = ARGV[1], ARGV[2], ARGV[3], ARGV[4]
@@ -33,7 +32,7 @@ end
 if redis.call('EXISTS', sesion) == 1 then redis.call('HSET', sesion, 'finalizada', idVisualizacion) end
 return { previo, score or '' }`;
 
-// Compensación: deja "continuar viendo" exactamente como estaba (idempotente: se puede repetir)
+// Compensación: restaura continuar viendo (idempotente)
 const RESTAURAR_CONTINUAR = `
 local cv, continuar, perfilesConCv, sesion = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
 local idContenido, idPerfil, score = ARGV[1], ARGV[2], ARGV[3]
@@ -60,7 +59,7 @@ const ACTUALIZAR_POR_CONTENIDO = `UPDATE historial_por_contenido SET finalizado 
 
 // Neo4j consultas:
 
-// MERGE por idVisualizacion: repetirlo no crea una segunda señal (hay restricción de unicidad)
+// MERGE por idVisualizacion: no duplica la señal
 const CREAR_SENAL = `MERGE (p:Perfil {id: $idPerfil})
   WITH p MATCH (c:Contenido {id: $idContenido})
   MERGE (p)-[r:VIO {idVisualizacion: $idVisualizacion}]->(c)
@@ -68,7 +67,7 @@ const CREAR_SENAL = `MERGE (p:Perfil {id: $idPerfil})
   RETURN count(r) AS creadas`;
 const BORRAR_SENAL = 'MATCH ()-[r:VIO {idVisualizacion: $idVisualizacion}]->() DELETE r';
 
-// Unidad terminada y la siguiente (si hay), leídas de la ficha en Mongo (también la usa P3 al reconstruir)
+// Unidad terminada y la siguiente, según la ficha de Mongo
 export async function unidadYSiguiente(idContenido, unidad) {
 	const contenido = await db.collection('contenidos').findOne(
 		{ _id: idContenido },
@@ -77,7 +76,6 @@ export async function unidadYSiguiente(idContenido, unidad) {
 	if (!contenido) throw new ErroresApp(`No existe el contenido ${idContenido}`, 404);
 	if (contenido.tipo !== 'serie') return { duracionSeg: contenido.duracionSeg, siguiente: null };
 
-	// Todos los episodios en orden de temporada y número
 	const episodios = [...contenido.temporadas]
 		.sort((a, b) => a.numero - b.numero)
 		.flatMap((t) => [...t.episodios].sort((a, b) => a.numero - b.numero).map((e) => ({ ...e, temporada: t.numero })));
@@ -94,7 +92,6 @@ export async function unidadYSiguiente(idContenido, unidad) {
 export async function finEpisodio(idSesion, { fallarEn } = {}) {
 	if (!esId(idSesion)) throw pedidoInvalido('idSesion no es un id válido');
 
-	// 1. Datos de la sesión, guardados por P2: identifican la fila de Cassandra y las claves de Redis
 	const sesion = await redis.hGetAll(claves.sesion(idSesion));
 	if (!sesion.idPerfil || !(await redis.exists(claves.vida(idSesion)))) {
 		throw new ErroresApp(`La sesión ${idSesion} no existe o expiró`, 410);
@@ -103,12 +100,11 @@ export async function finEpisodio(idSesion, { fallarEn } = {}) {
 	const fechaInicio = new Date(sesion.fechaInicio);
 	const mes = mesDe(fechaInicio);
 
-	// Reintento de una operación que ya terminó bien: no se repite nada
+	// Reintento de algo que ya terminó: no se repite
 	if (sesion.finalizada === idVisualizacion) {
 		return { idSesion, idVisualizacion, yaRegistrado: true };
 	}
 
-	// 2. Mongo (solo lectura): duración de lo que terminó y cuál es el siguiente episodio
 	const { duracionSeg, siguiente } = await unidadYSiguiente(idContenido, unidad);
 	const fechaFin = new Date();
 
@@ -132,7 +128,7 @@ export async function finEpisodio(idSesion, { fallarEn } = {}) {
 			{
 				nombre: 'marcar_finalizado', // Cassandra
 				ejecutar: async () => {
-					// Se guarda cómo estaba la fila para poder volverla atrás
+					// estado anterior, para compensar
 					const { rows: [previa] } = await cassandraClient.execute(
 						LEER_FILA, [idPerfil, mes, fechaInicio, idVisualizacion], { prepare: true },
 					);
@@ -164,7 +160,7 @@ export async function finEpisodio(idSesion, { fallarEn } = {}) {
 				},
 			},
 			{
-				nombre: 'senal_vio', // Neo4j: va última porque es la que alimenta las recomendaciones (P5)
+				nombre: 'senal_vio', // Neo4j: último porque alimenta las recomendaciones (P5)
 				ejecutar: async () => {
 					const [{ creadas }] = await cypher(CREAR_SENAL, {
 						idPerfil, idContenido, idVisualizacion, fecha: fechaFin.toISOString(),

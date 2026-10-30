@@ -6,7 +6,7 @@ import { esId } from '../lib/ids.js';
 import { pedidoInvalido, noEncontrado } from '../lib/errores.js';
 import { claves } from './p2-inicio-reproduccion-sesiones.js';
 
-// Cada cuánto corre el barrido de respaldo (por si el listener de expiraciones estuvo caído)
+// Barrido de respaldo por si el listener estuvo caído
 export const BARRIDO_CADA_MS = 30_000;
 const CIERRES_PENDIENTES = 'cierres_pendientes'; // LIST: cierres que no se pudieron registrar en Cassandra
 
@@ -14,14 +14,12 @@ const mesDe = (fecha) => fecha.toISOString().slice(0, 7);
 
 // Redis consultas:
 
-// Cierra sesiones en una sola operación atómica, en tres modos:
-//   'cuenta'   → todas las de la cuenta (cierre remoto): al terminar el cupo queda vacío, de inmediato
+// Cierra sesiones atómicamente, en tres modos:
+//   'cuenta'   → todas las de la cuenta (cierre remoto)
 //   'ids'      → las sesiones indicadas (cierre manual desde el dispositivo)
 //   'vencidas' → las indicadas, pero solo si su vida ya expiró (listener y barrido)
-// Por cada una: la saca del cupo, de "viendo ahora" y del dispositivo, y borra sus datos.
-// Devuelve los datos de cada sesión cerrada, para registrar el cierre en Cassandra.
-// Las claves se arman acá adentro con los mismos prefijos que `claves` (un solo nodo de Redis,
-// igual que el resto del TPO; en un cluster habría que agruparlas con hash tags).
+// Devuelve los datos de cada sesión cerrada para registrarla en Cassandra.
+// Un solo nodo de Redis: en un cluster habría que usar hash tags.
 const CERRAR = `
 local modo = ARGV[1]
 local ids = {}
@@ -51,7 +49,7 @@ return cerradas`;
 const REGISTRAR_SESION = `INSERT INTO sesiones_por_cuenta
   (id_cuenta, fecha_inicio, id_sesion, id_perfil, id_dispositivo, fecha_fin, motivo_cierre)
   VALUES (?, ?, ?, ?, ?, ?, ?)`;
-// Checkpoint final de la visualización en curso (P3 lo hace cada N reportes: así no se pierde el último tramo)
+// Último punto de la visualización en curso, para no perder el último tramo
 const CHECKPOINT_POR_PERFIL = `UPDATE historial_por_perfil SET posicion_seg = ?, fecha_fin = ?
   WHERE id_perfil = ? AND mes = ? AND fecha = ? AND id_visualizacion = ?`;
 const CHECKPOINT_POR_CONTENIDO = `UPDATE historial_por_contenido SET posicion_seg = ?, fecha_fin = ?
@@ -59,32 +57,26 @@ const CHECKPOINT_POR_CONTENIDO = `UPDATE historial_por_contenido SET posicion_se
 const HISTORIAL_SESIONES = `SELECT fecha_inicio, id_sesion, id_perfil, id_dispositivo, fecha_fin, motivo_cierre
   FROM sesiones_por_cuenta WHERE id_cuenta = ? LIMIT ?`;
 
-// ─── Cierre y registro ────────────────────────────────────────────────────────
-
-// Arma el registro de cada sesión cerrada a partir de lo que devolvió el Lua
 function aRegistros(cerradas, motivo) {
 	const ahora = new Date();
 	return cerradas.map(([idSesion, vivia, datos]) => {
 		const s = {};
 		for (let i = 0; i < datos.length; i += 2) s[datos[i]] = datos[i + 1];
-		// En el cierre remoto, una sesión que ya había vencido (y nadie llegó a cerrar) se registra como expirada
+		// Una sesión que ya había vencido se registra como expirada
 		const motivoReal = motivo === 'cierre_remoto' && vivia === '0' ? 'expirada' : motivo;
-		// Una sesión que expiró terminó con su última actividad, no cuando se la detectó
+		// Expiró en su última actividad, no cuando se detectó
 		const fechaFin = motivoReal === 'expirada' ? (s.ultimaActividad ?? s.fechaInicio) : ahora.toISOString();
 		return { idSesion, motivo: motivoReal, fechaFin, sesion: s };
 	});
 }
 
-// Registra en Cassandra cada cierre (idempotente: todo es por clave exacta).
-// Si Cassandra falla, el cierre ya está hecho en Redis (el cupo se liberó, que es lo que importa):
-// el registro queda en una lista pendiente que el barrido reintenta, así no se pierde.
+// Si Cassandra falla, el cierre en Redis ya está hecho: el registro queda pendiente y lo reintenta el barrido.
 async function registrarCierre({ idSesion, motivo, fechaFin, sesion: s }) {
 	const fin = new Date(fechaFin);
 	const consultas = [{
 		query: REGISTRAR_SESION,
 		params: [s.idCuenta, new Date(s.inicioSesion ?? s.fechaInicio), idSesion, s.idPerfil, s.idDispositivo, fin, motivo],
 	}];
-	// Si había una visualización a medias (no terminada por P4), se guarda su último punto
 	if (s.idVisualizacion && s.posicionSeg !== undefined && s.finalizada !== s.idVisualizacion) {
 		const inicio = new Date(s.fechaInicio);
 		const posicion = Number(s.posicionSeg);
@@ -122,16 +114,12 @@ const resumen = (r) => ({
 	idContenido: r.sesion.idContenido, motivo: r.motivo, fechaFin: r.fechaFin,
 });
 
-// ─── Cierre manual (el dispositivo cierra su sesión) ──────────────────────────
-
 export async function cerrarSesion(idSesion) {
 	if (!esId(idSesion)) throw pedidoInvalido('idSesion no es un id válido');
 	const { registros, pendientesDeRegistrar } = await cerrar('ids', { ids: [idSesion] }, 'manual');
-	// Cerrar una sesión que ya no existe no es un error: el resultado es el mismo (idempotente)
+	// Cerrar una sesión que no existe no es error (idempotente)
 	return { idSesion, cerrada: registros.length === 1, sesion: registros[0] ? resumen(registros[0]) : null, pendientesDeRegistrar };
 }
-
-// ─── Cierre remoto (el titular cierra todas las sesiones de la cuenta) ────────
 
 async function cuentaExiste(idCuenta) {
 	if (!esId(idCuenta)) throw pedidoInvalido('idCuenta no es un id válido');
@@ -147,12 +135,10 @@ export async function cerrarSesionesDeCuenta(idCuenta) {
 		idCuenta,
 		cerradas: registros.length,
 		sesiones: registros.map(resumen),
-		lugaresLibres: cuenta.limiteSesiones, // el cupo quedó vacío en la misma operación
+		lugaresLibres: cuenta.limiteSesiones,
 		pendientesDeRegistrar,
 	};
 }
-
-// ─── Sesiones de una cuenta: activas (Redis) + historial (Cassandra) ──────────
 
 export async function sesionesDeCuenta(idCuenta, { limite } = {}) {
 	const cuenta = await cuentaExiste(idCuenta);
@@ -162,7 +148,7 @@ export async function sesionesDeCuenta(idCuenta, { limite } = {}) {
 	const activas = [];
 	for (const id of ids) {
 		const [s, vida] = await Promise.all([redis.hGetAll(claves.sesion(id)), redis.ttl(claves.vida(id))]);
-		if (!s.idPerfil || vida < 0) continue; // vencida y todavía sin cerrar: no cuenta como activa
+		if (!s.idPerfil || vida < 0) continue; // vencida pero sin cerrar
 		activas.push({
 			idSesion: id, idPerfil: s.idPerfil, idDispositivo: s.idDispositivo, idContenido: s.idContenido,
 			inicioSesion: s.inicioSesion ?? s.fechaInicio, ultimaActividad: s.ultimaActividad ?? null, expiraEnSeg: vida,
@@ -178,9 +164,7 @@ export async function sesionesDeCuenta(idCuenta, { limite } = {}) {
 	return { idCuenta, limiteSesiones: cuenta.limiteSesiones, activas, historial };
 }
 
-// ─── Expiración automática: listener + barrido de respaldo ────────────────────
-
-// Busca sesiones cuyos datos siguen pero su vida ya expiró, y las cierra. Reintenta registros pendientes.
+// Cierra las sesiones vencidas que siguen en Redis y reintenta los registros pendientes
 export async function barrer() {
 	const vencidas = [];
 	for await (const lote of redis.scanIterator({ MATCH: 'sesion:*', COUNT: 500 })) {
@@ -203,15 +187,15 @@ export async function barrer() {
 			await registrarCierre(JSON.parse(pendiente));
 			reintentados++;
 		} catch {
-			await redis.rPush(CIERRES_PENDIENTES, pendiente); // Cassandra sigue caída: se reintenta en la próxima vuelta
+			await redis.rPush(CIERRES_PENDIENTES, pendiente); // Cassandra sigue caída
 			break;
 		}
 	}
 	return { cerradas, reintentados };
 }
 
-// Redis avisa cuando expira una clave (keyspace notifications). Al expirar vida:{id}, se cierra esa sesión.
-// Necesita una conexión aparte: una conexión suscripta no puede mandar otros comandos.
+// Al expirar vida:{id} Redis avisa (keyspace notifications) y se cierra la sesión.
+// Necesita su propia conexión: una suscripta no puede mandar otros comandos.
 export async function iniciarVigilancia() {
 	await redis.configSet('notify-keyspace-events', 'Ex');
 	const suscriptor = redis.duplicate();
@@ -234,7 +218,7 @@ export async function iniciarVigilancia() {
 			if (cerradas || reintentados) console.log(`P6 barrido: ${cerradas} sesiones vencidas cerradas, ${reintentados} registros reintentados`);
 		})
 		.catch((error) => console.error('P6 barrido:', error.message));
-	await correrBarrido(); // al arrancar: lo que haya vencido mientras la API estaba apagada
+	await correrBarrido(); // lo que venció con la API apagada
 	const intervalo = setInterval(correrBarrido, BARRIDO_CADA_MS);
 
 	return async () => {

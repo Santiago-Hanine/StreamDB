@@ -1,4 +1,3 @@
-// Utilidades de la interfaz
 export const $ = (s, raiz = document) => raiz.querySelector(s);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const corto = (id) => String(id ?? '').slice(0, 8);

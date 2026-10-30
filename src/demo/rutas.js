@@ -1,5 +1,4 @@
-// Panel de demo (GET /demo): ejecuta cada problema y cada falla, y muestra qué hizo cada motor.
-// Estas rutas solo sirven al panel: datos de ejemplo, trazas, estado de los motores y reinicio.
+// Rutas del panel de demo (GET /demo): datos de ejemplo, trazas, estado de los motores y reinicio.
 import { Router } from 'express';
 import { fileURLToPath } from 'node:url';
 import db from '../db/mongo.js';
@@ -15,11 +14,9 @@ import { obtenerTraza, sinTraza } from './traza.js';
 
 const router = Router();
 const PANEL = fileURLToPath(new URL('./panel.html', import.meta.url));
-const PREFIJO_ALTA = 'Demo P1 · '; // título de las series que crea el panel (el reinicio las borra)
+const PREFIJO_ALTA = 'Demo P1 · '; // el reinicio borra las series con este prefijo
 
 router.get('/', (req, res) => res.sendFile(PANEL));
-
-// ─── Datos de ejemplo (los fijos del seed) ────────────────────────────────────
 
 let cache = null;
 export async function datosDemo() {
@@ -33,7 +30,7 @@ export async function datosDemo() {
 			{ sort: { _id: 1 }, projection: { titulo: 1, clasificacionEdad: 1 } },
 		),
 		db.collection('dispositivos').find({}, { sort: { _id: 1 }, limit: 3, projection: { _id: 1 } }).toArray(),
-		// Un contenido cuyas licencias terminaron todas (el seed deja algunos así para P8)
+		// Un contenido con todas sus licencias terminadas (para P8)
 		sql(`SELECT id_contenido FROM licencia GROUP BY id_contenido
              HAVING max(upper(vigencia)) <= CURRENT_DATE ORDER BY id_contenido LIMIT 1`),
 	]);
@@ -67,8 +64,6 @@ router.get('/api/datos', async (req, res) => {
 	res.json(await sinTraza(datosDemo));
 });
 
-// ─── Traza de un pedido (con su saga, si la hubo) ─────────────────────────────
-
 router.get('/api/trazas/:id', async (req, res) => {
 	const traza = obtenerTraza(req.params.id);
 	if (!traza) throw noEncontrado('No existe esa traza (se guardan solo las últimas 50)');
@@ -78,11 +73,9 @@ router.get('/api/trazas/:id', async (req, res) => {
 	res.json({ ...traza, saga });
 });
 
-// ─── Estado de los motores para los datos de demo ─────────────────────────────
-
 const corto = (id) => (id ? String(id).slice(0, 8) : '—');
 const segundos = (s) => (s == null ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
-// Fecha corta para las claves de las filas de Cassandra (así no cambian cuando entra una fila nueva)
+// Fecha corta para las claves de las filas de Cassandra
 const momento = (fecha) => fecha.toLocaleString('es-AR', {
 	timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit',
 	hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
@@ -138,7 +131,7 @@ async function estado(idPerfil) {
 					[d.cuenta.id], { prepare: true }),
 			]);
 			return [
-				// ventana: son las 3 más recientes; si una sale porque entró otra, no es que se borró
+				// son las 3 más recientes: si una sale no es que se borró
 				...historial.rows.map((f) => ({
 					clave: `historial_por_perfil · ${momento(f.fecha)} · ${corto(f.id_visualizacion)}`, ventana: true,
 					valor: `${titulos.get(f.id_contenido.toString()) ?? corto(f.id_contenido)} · ${unidad(f.id_contenido.toString(), f.id_episodio?.toString())}`
@@ -192,16 +185,13 @@ router.get('/api/estado', async (req, res) => {
 	res.json(await sinTraza(() => estado(req.query.perfil)));
 });
 
-// ─── P6: forzar la expiración de una sesión (simula 2 minutos sin reportes) ───
-
-// Le pone 1 ms de vida a vida:{id}. Al expirar, Redis avisa y el listener de P6 la cierra:
-// es exactamente el camino de una expiración real, sin esperar los 120 s.
+// P6: le pone 1 ms de vida a vida:{id} para que expire como una real, sin esperar 120 s.
 router.post('/api/expirar/:idSesion', async (req, res) => {
 	const { idSesion } = req.params;
 	if (!esId(idSesion)) throw pedidoInvalido('idSesion no es un id válido');
 	if (!(await redis.pExpire(claves.vida(idSesion), 1))) throw noEncontrado('La sesión no está activa');
 
-	// Se espera (sin registrar estas consultas) a que el listener la cierre
+	// Espera a que el listener la cierre
 	const inicio = Date.now();
 	let cerrada = false;
 	while (!cerrada && Date.now() - inicio < 4000) {
@@ -211,10 +201,8 @@ router.post('/api/expirar/:idSesion', async (req, res) => {
 	res.json({ idSesion, cerrada, cerradaPor: cerrada ? 'listener de expiraciones (P6)' : null, esperaMs: Date.now() - inicio });
 });
 
-// ─── Reiniciar la demo ────────────────────────────────────────────────────────
-
-// Deshace los retiros que hizo la saga de P8 (los que tienen retiro.idSaga): vuelve a publicar
-// en Mongo y Neo4j, las licencias a vigente y borra la marca de Redis. Los cv borrados no vuelven.
+// Deshace los retiros de la saga de P8: vuelve a publicar y las licencias a vigente.
+// Los cv borrados no vuelven.
 async function deshacerRetiros(filtro = {}) {
 	const retirados = await db.collection('contenidos')
 		.find({ ...filtro, estado: 'retirado', 'retiro.idSaga': { $exists: true } }, { projection: { 'retiro.idSaga': 1 } }).toArray();
@@ -232,14 +220,14 @@ async function deshacerRetiros(filtro = {}) {
 	return retirados.length;
 }
 
-// Vuelve a publicar un contenido retirado por P8, para poder repetir el retiro (y sus fallas)
+// Para poder repetir el retiro (y sus fallas)
 router.post('/api/republicar/:id', async (req, res) => {
 	if (!esId(req.params.id)) throw pedidoInvalido('id no es un id válido');
 	res.json({ idContenido: req.params.id, republicado: (await sinTraza(() => deshacerRetiros({ _id: req.params.id }))) === 1 });
 });
 
-// Deja los datos de demo como después del seed, para volver a probar:
-// cierra las sesiones de la cuenta demo, deshace los retiros de P8 y borra las series que creó el panel.
+// Deja los datos de demo como después del seed: cierra las sesiones de la cuenta demo,
+// deshace los retiros de P8 y borra las series que creó el panel.
 router.post('/api/reiniciar', async (req, res) => {
 	await sinTraza(async () => {
 		const d = await datosDemo();
@@ -248,7 +236,6 @@ router.post('/api/reiniciar', async (req, res) => {
 		resultado.sesionesCerradas = (await cerrarSesionesDeCuenta(d.cuenta.id)).cerradas;
 		resultado.retirosDeshechos = await deshacerRetiros();
 
-		// Series creadas desde el panel (P1)
 		const altas = await db.collection('contenidos').find({ titulo: { $regex: `^${PREFIJO_ALTA}` } }, { projection: { _id: 1 } }).toArray();
 		const idsAltas = altas.map((c) => c._id);
 		await Promise.all([

@@ -8,25 +8,23 @@ import { claves } from './p2-inicio-reproduccion-sesiones.js';
 
 const LIMITE_POR_DEFECTO = 10;
 const LIMITE_MAXIMO = 20;
-const SEMILLAS_VISTAS = 10;   // últimos contenidos terminados que se usan como punto de partida
-const SEMILLAS_EN_CURSO = 5;  // y los que está viendo ahora
+const SEMILLAS_VISTAS = 10; // últimos contenidos terminados que se usan como semilla
+const SEMILLAS_EN_CURSO = 5; // y los que está viendo
 
-// Cuánto suma cada camino del grafo entre lo visto (semilla) y un candidato
+// Peso de cada tipo de camino entre una semilla y un candidato
 const PESOS = { secuela: 5, mismo_universo: 4, precuela: 3, similar: 3, elenco: 2, genero: 1 };
 
-// Neo4j consultas (los números de JavaScript llegan como decimales: LIMIT necesita toInteger):
+// Neo4j consultas (LIMIT necesita toInteger: los números llegan como decimales):
 
-// Semillas: los últimos contenidos que el perfil terminó de ver (una VIO por visualización)
+// Semillas: lo último que terminó de ver
 const VISTOS_RECIENTES = `
   MATCH (:Perfil {id: $idPerfil})-[v:VIO]->(c:Contenido)
   WITH c, max(v.fecha) AS ultima
   ORDER BY ultima DESC LIMIT toInteger($cantidad)
   RETURN c.id AS id`;
 
-// Recorrido desde cada semilla por los tres tipos de vínculo. Cada fila es un camino
-// semilla → candidato con su peso; después se suman por candidato.
-// Se filtra acá mismo lo ya visto, lo no publicado y lo que no es apto para la edad del perfil
-// (estado y clasificación están desnormalizados en Neo4j justamente para esto).
+// Cada fila es un camino semilla → candidato con su peso. Se descarta lo visto, lo no publicado y lo no apto
+// (estado y clasificación están desnormalizados en Neo4j para esto).
 const RECORRER = `
   UNWIND $semillas AS sem
   MATCH (s:Contenido {id: sem.id})
@@ -53,7 +51,7 @@ const RECORRER = `
   LIMIT toInteger($cantidad)
   RETURN c.id AS id, puntaje, caminos`;
 
-// Para un perfil sin historial (o si faltan resultados): lo más visto de la plataforma
+// Perfil sin historial: lo más visto
 const POPULARES = `
   MATCH (c:Contenido)<-[v:VIO]-()
   WHERE c.estado = 'publicado' AND c.clasificacionEdad <= $edad AND NOT c.id IN $excluir
@@ -72,7 +70,7 @@ const DESCRIPCION = {
 	genero: (via) => `también es de ${via}`,
 };
 
-// El "porque viste X" sale del camino de más peso hacia ese candidato
+// El "porque viste X" sale del camino de más peso
 function explicar(caminos) {
 	const mejor = caminos.reduce((a, b) => (b.peso > a.peso ? b : a));
 	const verbo = mejor.enCurso ? 'estás viendo' : 'viste';
@@ -84,12 +82,10 @@ function explicar(caminos) {
 }
 
 export async function recomendar(idPerfil, { limite } = {}) {
-
-	// 1. Validar
 	if (!esId(idPerfil)) throw pedidoInvalido('idPerfil no es un id válido');
 	limite = Math.min(Math.max(parseInt(limite) || LIMITE_POR_DEFECTO, 1), LIMITE_MAXIMO);
 
-	// 2. Mongo: la clasificación por edad del perfil (fuente de verdad)
+	// Mongo es la fuente de verdad de la edad del perfil
 	const cuenta = await db.collection('cuentas').findOne(
 		{ 'perfiles.id': idPerfil },
 		{ projection: { 'perfiles.$': 1 } },
@@ -97,25 +93,24 @@ export async function recomendar(idPerfil, { limite } = {}) {
 	if (!cuenta) throw noEncontrado(`No existe el perfil ${idPerfil}`);
 	const edad = cuenta.perfiles[0].clasificacionEdad;
 
-	// 3. Consumo reciente: lo que está viendo ahora (Redis) y lo último que terminó (Neo4j).
-	//    Lo que está viendo no se recomienda: ya aparece en "continuar viendo".
+	// Lo que está viendo no se recomienda: ya está en continuar viendo
 	const [enCurso, vistos] = await Promise.all([
 		redis.zRange(claves.continuar(idPerfil), 0, SEMILLAS_EN_CURSO - 1, { REV: true }),
 		cypher(VISTOS_RECIENTES, { idPerfil, cantidad: SEMILLAS_VISTAS }),
 	]);
-	// Lo más reciente pesa más: factor 1 para lo que está viendo y la última vista, y baja de a 5 %
+	// Lo más reciente pesa más: baja 5 % por posición
 	const semillas = [
 		...enCurso.map((id) => ({ id, factor: 1, enCurso: true })),
 		...vistos.filter((v) => !enCurso.includes(v.id)).map((v, i) => ({ id: v.id, factor: 1 - i * 0.05, enCurso: false })),
 	];
 
-	// 4. Neo4j: recorrido por vínculos, elenco y género. Se piden de más porque Mongo vuelve a filtrar.
+	// Se piden de más porque Mongo vuelve a filtrar
 	const cantidad = limite * 3;
 	const candidatos = semillas.length
 		? await cypher(RECORRER, { idPerfil, semillas, excluir: enCurso, edad, pesos: PESOS, cantidad })
 		: [];
 
-	// 5. Mongo: las fichas, y se vuelve a verificar publicado y apto (Neo4j tiene una copia de esos datos)
+	// Mongo vuelve a verificar publicado y apto (Neo4j tiene una copia)
 	const fichas = async (ids) => {
 		const docs = await db.collection('contenidos').find(
 			{ _id: { $in: ids }, estado: 'publicado', clasificacionEdad: { $lte: edad } },
@@ -137,7 +132,7 @@ export async function recomendar(idPerfil, { limite } = {}) {
 		});
 	}
 
-	// 6. Si no alcanzó (perfil nuevo o con poco historial), se completa con lo más visto
+	// Si no alcanza, se completa con lo más visto
 	if (recomendaciones.length < limite) {
 		const excluir = [...enCurso, ...recomendaciones.map((r) => r.idContenido)];
 		const populares = await cypher(POPULARES, { idPerfil, edad, excluir, cantidad: (limite - recomendaciones.length) * 3 });

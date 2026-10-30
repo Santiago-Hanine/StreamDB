@@ -18,54 +18,49 @@ import { ErroresApp } from './lib/errores.js';
 import * as traza from './demo/traza.js';
 import demo from './demo/rutas.js';
 import appDemo from './demo/app-rutas.js';
-
+import consola from './demo/consola.js';
 
 const API_PATH = process.env.API_PATH || '/api/v1';
 
 export const app = express();
 app.use(express.json());
-// Panel de demo: registra qué hace cada motor en los pedidos que traen el encabezado x-traza
+// Traza para el panel de demo (pedidos con x-traza)
 app.use(traza.middleware);
 
-// 1. Rutas
+// Rutas
 app.use(API_PATH + '/contenidos', contenidos);
 app.use(API_PATH + '/reproducciones', reproducciones);
 app.use(API_PATH + '/perfiles', perfiles);
 app.use(API_PATH + '/cuentas', cuentas);
 app.use(API_PATH + '/licencias', licencias);
 app.use('/app', express.static(fileURLToPath(new URL('./demo/app', import.meta.url)))); // app de demo (http://localhost:PORT/app)
-app.use('/demo/api/app', appDemo); // rutas auxiliares de la app de demo (/app)
+app.use('/demo/api/app', appDemo);
+app.use('/demo/api/consola', consola);
 app.use('/demo', demo); // panel para ejecutar cada problema y cada falla (http://localhost:PORT/demo)
-// 2. Ruta inexistente
 app.use((req, res) => {
 	res.status(404).json({ error: `No existe ${req.method} ${req.path}` });
 });
 
-// 3. Manejador de errores: necesita los 4 parámetros y va siempre al final
+// Manejador de errores (necesita los 4 parámetros)
 app.use((err, req, res, next) => {
-	// Errores conocidos de Mongo
 	if (err.code === 11000) err = new ErroresApp('Ya existe un registro con ese valor', 409, err.keyValue);
 	if (err.code === 121) err = new ErroresApp('El documento no cumple el esquema', 400, err.errInfo?.details);
 
-	// JSON mal formado en el body
 	if (err.type === 'entity.parse.failed') err = new ErroresApp('El body no es un JSON válido', 400);
 
 	if (err instanceof ErroresApp) {
 		return res.status(err.status).json({ error: err.message, detalle: err.detalle, idSaga: err.idSaga });
 	}
 
-	// Inesperado: se loguea completo, pero al cliente no se le muestran detalles internos
 	console.error(err);
 	res.status(500).json({ error: 'Error interno', idSaga: err.idSaga });
 });
 
-// 4. Arrancar
 app.listen(process.env.PORT, () => {
 	console.log(`Server is running on port ${process.env.PORT}`);
 });
 
-// P6: las sesiones inactivas expiran solas (listener de expiraciones de Redis + barrido de respaldo).
-// Fuera de todo pedido: lo que hacen queda como "proceso de fondo" en la traza del panel
+// P6: listener de expiraciones de Redis + barrido de respaldo
 const detenerVigilancia = await iniciarVigilancia();
 
 process.on('SIGINT', async () => {

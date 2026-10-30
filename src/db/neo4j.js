@@ -6,12 +6,10 @@ if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
 }
 
 export const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD), {
-
-	// Habilita usar enteros de Javascript en vez de los enteros de Neo4j
+	// Enteros de JavaScript en vez de los de Neo4j
 	disableLosslessIntegers: true,
 
-	// Fallar rápido: por defecto el driver reintenta 30 s y espera hasta 60 s una conexión.
-	// En una saga, cuanto antes falla un paso, antes se compensa y menos dura el estado intermedio.
+	// Fallar rápido: en una saga, cuanto antes falla un paso antes se compensa
 	connectionTimeout: 5000,
 	connectionAcquisitionTimeout: 5000,
 	maxTransactionRetryTime: 5000,
@@ -25,7 +23,6 @@ try {
 	process.exit(1);
 }
 
-// Atajo para consultas simples: devuelve las filas como objetos planos
 export async function cypher(query, params = {}) {
 	const { records } = await driver.executeQuery(query, params);
 	return records.map((r) => r.toObject());

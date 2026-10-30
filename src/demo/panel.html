@@ -256,19 +256,17 @@ const ROL_CORTO = {
 	cassandra: 'historial y sesiones cerradas', postgres: 'licencias',
 };
 
-// El encabezado puede ocupar más de una línea: el panel de estado toma el alto que queda debajo
+// El encabezado puede ocupar más de una línea
 const encabezado = document.querySelector('header');
 new ResizeObserver(() => document.documentElement.style.setProperty('--alto-header', encabezado.offsetHeight + 'px')).observe(encabezado);
 
-// Tocar una operación de la línea de tiempo la expande para ver el detalle completo
 document.addEventListener('click', (ev) => {
 	const celda = ev.target.closest('.tiempo .que');
 	if (celda && !getSelection().toString()) celda.classList.toggle('abierta');
 });
 
-// ─── Estado del panel ────────────────────────────────────────────────────────
-let D = null;                 // datos de demo (ids fijos del seed)
-const ctx = { sesiones: {} }; // por dispositivo: { id, vence, finalizada, pos }
+let D = null; // ids fijos del seed
+const ctx = { sesiones: {} }; // por dispositivo
 let actual = 'P2';
 let estadoPrevio = null;
 const $ = (s) => document.querySelector(s);
@@ -286,7 +284,6 @@ const sesionActual = () => {
 	return s && s.vence > Date.now() ? s : null;
 };
 
-// ─── Pedidos reutilizables ───────────────────────────────────────────────────
 const iniciar = ({ body, ...extra } = {}) => () => {
 	const { perfil, dispositivo, contenido } = sel();
 	return {
@@ -298,7 +295,7 @@ const iniciar = ({ body, ...extra } = {}) => () => {
 		...extra,
 	};
 };
-// Prepara una sesión si no hay una vigente en el dispositivo (o si su visualización ya terminó)
+// Prepara una sesión si el dispositivo no tiene una vigente
 const conSesion = (pedidos, { sinFinalizar = false } = {}) => () => {
 	const s = sesionActual();
 	const falta = !s || (sinFinalizar && s.finalizada);
@@ -315,7 +312,7 @@ const progreso = (evento = 'reporte', principal = true) => () => {
 };
 const cerrarTodas = () => ({ metodo: 'POST', ruta: `${API}/cuentas/${D.cuenta.id}/cerrar-sesiones`, etiqueta: 'P6 · cerrar todas (para empezar de cero)', preparacion: true, guardar: () => { ctx.sesiones = {}; } });
 
-// ─── Los 8 problemas ─────────────────────────────────────────────────────────
+// Los 8 problemas
 const PROBLEMAS = {
 	P1: {
 		nombre: 'Alta de serie',
@@ -335,7 +332,7 @@ const PROBLEMAS = {
 					{
 						metodo: 'POST', ruta: `${API}/contenidos/series`, principal: true, etiqueta: 'P1 · alta',
 						body: {
-							// El sufijo lo hace único aunque se den dos altas en el mismo segundo (la verificación busca por título)
+							// único aunque haya dos altas en el mismo segundo
 							titulo: `${D.prefijoAlta}${new Date().toLocaleTimeString('es-AR')} · ${Math.random().toString(36).slice(2, 6)}`,
 							clasificacionEdad: 13, anioEstreno: 2026,
 							generos: D.serie.generos.slice(0, 2), idPlataforma: D.serie.idPlataforma,
@@ -545,7 +542,7 @@ const PROBLEMAS = {
 				titulo: 'Retirar un contenido vencido', desc: () => `«${D.vencido?.titulo}»: todas sus licencias terminaron. «Reiniciar demo» lo vuelve a publicar.`,
 				fallas: ['continuar_viendo', 'marcar_nodo', 'retirar_ficha', 'vencer_licencias'],
 				pedidos: () => [
-					// Si ya se retiró antes, se vuelve a publicar para poder repetirlo (o probar otra falla)
+					// Si ya se retiró, se vuelve a publicar para repetirlo
 					{ metodo: 'POST', ruta: `/demo/api/republicar/${D.vencido.id}`, etiqueta: 'preparación · volver a publicarlo si estaba retirado', preparacion: true },
 					{ metodo: 'POST', ruta: `${API}/contenidos/${D.vencido.id}/retiro`, principal: true },
 				],
@@ -608,7 +605,6 @@ const PROBLEMAS = {
 	},
 };
 
-// ─── Ejecución ───────────────────────────────────────────────────────────────
 async function pedir(p, fallarEn) {
 	let ruta = p.ruta;
 	if (fallarEn && p.principal) ruta += (ruta.includes('?') ? '&' : '?') + 'fallarEn=' + fallarEn;
@@ -629,11 +625,11 @@ async function ejecutar(clave, i, fallarEn, boton) {
 	const escenario = PROBLEMAS[clave].escenarios[i];
 	document.querySelectorAll('.escenario button').forEach((b) => (b.disabled = true));
 	const resultados = [];
-	const antes = await leerEstado().catch(() => null); // para mostrar qué cambió en cada motor
+	const antes = await leerEstado().catch(() => null);
 	try {
-		// Los pedidos se arman de a uno: cada uno puede depender de lo que guardó el anterior (ej. idSesion)
+		// De a uno: cada pedido puede usar lo que guardó el anterior
 		for (const item of escenario.pedidos()) {
-			// Pedidos simultáneos (ej. la carrera por el último lugar de P2)
+			// Pedidos simultáneos (ej. la carrera de P2)
 			if (item.paralelo) {
 				resultados.push(...await Promise.all(item.paralelo.map((f) => pedir(f(), fallarEn))));
 				continue;
@@ -641,7 +637,7 @@ async function ejecutar(clave, i, fallarEn, boton) {
 			let p = typeof item === 'function' ? item() : item;
 			let r = await pedir(p, fallarEn);
 			resultados.push(r);
-			// Un pedido que se repite hasta que se cumple una condición (ej. llegar al checkpoint de P3)
+			// Se repite hasta que se cumple una condición (ej. el checkpoint de P3)
 			for (let n = 1; item.repetirHasta && r.status < 400 && !item.repetirHasta(r.cuerpo) && n < item.maximo; n++) {
 				p = item();
 				r = await pedir(p, fallarEn);
@@ -668,7 +664,7 @@ async function ejecutar(clave, i, fallarEn, boton) {
 	if (despues) pintarEstado(despues); else await refrescarEstado();
 }
 
-// Qué cambió en los datos de demo entre antes y después de la ejecución, motor por motor
+// Qué cambió en cada motor entre antes y después
 function diferencias(antes, despues) {
 	const cambios = [];
 	for (const [m, filas] of Object.entries(despues.motores)) {
@@ -679,7 +675,7 @@ function diferencias(antes, despues) {
 			if (!a) cambios.push({ motor: m, clave: f.clave, antes: '—', despues: f.valor, log: f.log });
 			else if (sinContador(a.valor) !== sinContador(f.valor)) cambios.push({ motor: m, clave: f.clave, antes: a.valor, despues: f.valor, log: f.log });
 		}
-		// Lo que ya no está (salvo filas de una ventana, como "las 3 más recientes", que salen porque entró otra)
+		// Lo que ya no está (salvo filas de una ventana como "las 3 más recientes")
 		for (const a of previas.values()) if (!a.ventana) cambios.push({ motor: m, clave: a.clave, antes: a.valor, despues: '(ya no está)', log: a.log });
 	}
 	return cambios;
@@ -696,7 +692,7 @@ function htmlCambios(cambios, conPreparacion) {
 		${cambios.length ? `<table class="tabla-cambios"><thead><tr><th>Motor</th><th>Dato</th><th>Antes</th><th>Después</th></tr></thead><tbody>${filas}</tbody></table>` : ''}</div>`;
 }
 
-// ─── Copiar una ejecución como Markdown (evidencia para el informe) ──────────
+// Copiar una ejecución como Markdown
 const celda = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
 const recortarJson = (v, max = 40) => {
 	const lineas = JSON.stringify(v, null, 2).split('\n');
@@ -740,7 +736,7 @@ async function copiar(texto) {
 	try {
 		await navigator.clipboard.writeText(texto);
 	} catch {
-		const t = document.createElement('textarea'); // sin permiso de portapapeles: el método viejo
+		const t = document.createElement('textarea'); // sin permiso de portapapeles
 		t.value = texto;
 		document.body.appendChild(t);
 		t.select();
@@ -750,7 +746,6 @@ async function copiar(texto) {
 	aviso('Copiado como Markdown: listo para pegar en el informe.');
 }
 
-// ─── Render: resultados ──────────────────────────────────────────────────────
 function relato(problema, r) {
 	const saga = r.traza?.saga;
 	const c = r.cuerpo ?? {};
@@ -863,7 +858,6 @@ $('#verLog').addEventListener('change', () => {
 });
 $('#limpiar').addEventListener('click', () => { $('#resultados').innerHTML = '<p class="vacio">Ejecutá un escenario para ver qué hace cada motor.</p>'; });
 
-// ─── Render: problema y escenarios ───────────────────────────────────────────
 const texto = (v) => (typeof v === 'function' ? v() : v);
 
 function mostrarProblema(clave) {
@@ -897,7 +891,6 @@ function armarNav() {
 	$('#nav').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => mostrarProblema(b.dataset.p)));
 }
 
-// ─── Estado de los motores ───────────────────────────────────────────────────
 const sinContador = (v) => String(v).replace(/vence en \d+ s/, '');
 
 const leerEstado = () => fetch(`/demo/api/estado?perfil=${sel().perfil.id}`).then((x) => {
@@ -941,7 +934,6 @@ function aviso(texto) {
 	temporizador = setTimeout(() => a.classList.remove('visible'), 3500);
 }
 
-// ─── Arranque ────────────────────────────────────────────────────────────────
 async function arrancar() {
 	try {
 		D = await fetch('/demo/api/datos').then((r) => { if (!r.ok) throw new Error('corré npm run seed'); return r.json(); });

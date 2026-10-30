@@ -4,7 +4,7 @@ import { cassandraClient as cliente } from '../db/cassandra.js';
 import { generarDatos, SEMILLA } from './datos.js';
 
 const { executeConcurrent } = cassandra.concurrent;
-const mes = (fecha) => fecha.toISOString().slice(0, 7); // '2026-10': parte de la clave de partición
+const mes = (fecha) => fecha.toISOString().slice(0, 7); // parte de la clave de partición
 
 const { visualizaciones } = generarDatos();
 
@@ -12,7 +12,6 @@ try {
 	await cliente.execute('TRUNCATE historial_por_perfil');
 	await cliente.execute('TRUNCATE historial_por_contenido');
 
-	// executeConcurrent manda muchas inserciones en paralelo (64 a la vez), ya preparadas
 	await executeConcurrent(
 		cliente,
 		`INSERT INTO historial_por_perfil
@@ -26,7 +25,7 @@ try {
 	);
 	console.log(`✓ historial_por_perfil: ${visualizaciones.length}`);
 
-	// Los mismos datos, con la clave pensada para la consulta por contenido (P8)
+	// Mismos datos, particionados por contenido (P8)
 	await executeConcurrent(
 		cliente,
 		`INSERT INTO historial_por_contenido
